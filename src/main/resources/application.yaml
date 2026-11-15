@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: clinic-backend
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.default_schema: clinic
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          audiences:
+            - sokhasa-api
+
+server:
+  port: "${PORT:8080}"
+
+management:
+  endpoints:
+    web:
+      base-path: /api/v1
+      exposure:
+        include: health
+      discovery:
+        enabled: false
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+
+logging:
+  level:
+#
+    com.sokhasaclinic.clinicbackend: DEBUG
