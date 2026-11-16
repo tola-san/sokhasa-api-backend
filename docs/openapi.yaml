@@ -42,3 +42,593 @@ paths:
               example:
                 name: Clinic Sokhasa
                 message: Welcome to Clinic Sokhasa.
+
+  /public/pages/{slug}:
+    get:
+      tags:
+        - Public CMS
+      operationId: getPublicPage
+      summary: Get published page content by slug and language
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+            example: about-us
+        - name: lang
+          in: query
+          required: true
+          description: Language code (km, en, or zh)
+          schema:
+            type: string
+            enum: [km, en, zh]
+            example: en
+      responses:
+        '200':
+          description: Published localized page content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPageWrapper'
+        '400':
+          description: Invalid language parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Page or requested translation not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/pages:
+    get:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: listPages
+      summary: Paginated list of CMS pages
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [DRAFT, PUBLISHED]
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            default: updatedAt,desc
+      responses:
+        '200':
+          description: List of page summaries with pagination
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageListingResponse'
+        '401':
+          description: Unauthorized
+        '403':
+          description: Forbidden (requires ADMIN role)
+
+    post:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: createPage
+      summary: Create a new CMS page in draft status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavePageRequest'
+      responses:
+        '201':
+          description: Page created successfully
+          headers:
+            Location:
+              description: URI of the newly created page
+              schema:
+                type: string
+            ETag:
+              description: Strong revision ETag (e.g. "1")
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageDetailWrapper'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: Slug already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/pages/{id}:
+    get:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: getPage
+      summary: Get full CMS page details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Page detail with translations
+          headers:
+            ETag:
+              description: Strong revision ETag (e.g. "1")
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageDetailWrapper'
+        '404':
+          description: Page not found
+
+    put:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: updatePage
+      summary: Update draft translations for an existing page
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          description: Current revision ETag (e.g. "1")
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavePageRequest'
+      responses:
+        '200':
+          description: Page updated successfully
+          headers:
+            ETag:
+              description: New revision ETag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageDetailWrapper'
+        '412':
+          description: Revision mismatch (stale If-Match header)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '428':
+          description: If-Match header required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+    delete:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: deletePage
+      summary: Delete an unpublished page
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Page deleted successfully
+        '409':
+          description: Page is currently published (unpublish before deleting)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/pages/{id}/publish:
+    patch:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: publishPage
+      summary: Publish selected translations to make them live
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PublishPageRequest'
+      responses:
+        '200':
+          description: Page published successfully
+          headers:
+            ETag:
+              description: New revision ETag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageDetailWrapper'
+
+  /admin/pages/{id}/unpublish:
+    patch:
+      tags:
+        - Admin CMS Pages
+      security:
+        - BearerAuth: []
+      operationId: unpublishPage
+      summary: Unpublish page taking all live translations offline
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: If-Match
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page unpublished successfully
+          headers:
+            ETag:
+              description: New revision ETag
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PageDetailWrapper'
+
+  /admin/media/upload:
+    post:
+      tags:
+        - Admin Media
+      security:
+        - BearerAuth: []
+      operationId: uploadMedia
+      summary: Upload an image asset to Cloudflare R2
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Image file (JPEG, PNG, or WebP up to 5 MiB)
+      responses:
+        '201':
+          description: Image uploaded and registered
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MediaUploadWrapper'
+        '413':
+          description: Image exceeds 5 MiB limit
+        '415':
+          description: Unsupported image format
+        '503':
+          description: Storage unavailable
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak JWT access token with ROLE_ADMIN
+
+  schemas:
+    ImageDto:
+      type: object
+      required: [mediaId, altText]
+      properties:
+        mediaId:
+          type: string
+          format: uuid
+        altText:
+          type: string
+          maxLength: 200
+
+    SignedImageDto:
+      type: object
+      required: [url, altText]
+      properties:
+        url:
+          type: string
+          format: uri
+        altText:
+          type: string
+
+    TranslationDto:
+      type: object
+      required: [languageCode, title, content]
+      properties:
+        languageCode:
+          type: string
+          enum: [km, en, zh]
+        title:
+          type: string
+          maxLength: 160
+        content:
+          type: string
+          maxLength: 100000
+        image:
+          $ref: '#/components/schemas/ImageDto'
+
+    SavePageRequest:
+      type: object
+      required: [slug, translations]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          maxLength: 80
+        translations:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/TranslationDto'
+
+    PublishPageRequest:
+      type: object
+      required: [languageCodes]
+      properties:
+        languageCodes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: string
+            enum: [km, en, zh]
+
+    PageDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranslationDto'
+        publishedLanguageCodes:
+          type: array
+          items:
+            type: string
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PageDetailWrapper:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PageDetailResponse'
+
+    PageTitleDto:
+      type: object
+      properties:
+        languageCode:
+          type: string
+        title:
+          type: string
+
+    PageSummaryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageTitleDto'
+        publishedLanguageCodes:
+          type: array
+          items:
+            type: string
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    PaginationDto:
+      type: object
+      properties:
+        page:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+        hasNext:
+          type: boolean
+        hasPrevious:
+          type: boolean
+
+    PageListingResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PageSummaryResponse'
+        pagination:
+          $ref: '#/components/schemas/PaginationDto'
+
+    PublicPageResponse:
+      type: object
+      properties:
+        slug:
+          type: string
+        status:
+          type: string
+        languageCode:
+          type: string
+        title:
+          type: string
+        content:
+          type: string
+        image:
+          $ref: '#/components/schemas/SignedImageDto'
+          nullable: true
+
+    PublicPageWrapper:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicPageResponse'
+
+    MediaUploadResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        mimeType:
+          type: string
+        size:
+          type: integer
+
+    MediaUploadWrapper:
+      type: object
+      properties:
+        data:
+          $ref: '#/components/schemas/MediaUploadResponse'
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          example: VALIDATION_ERROR
+        title:
+          type: string
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Supply exactly one supported language.
+        instance:
+          type: string
+          example: /api/v1/public/pages/about-us
+        timestamp:
+          type: string
+          format: date-time
+        errors:
+          type: array
+          items:
+            type: string

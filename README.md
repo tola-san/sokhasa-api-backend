@@ -48,9 +48,11 @@ If port 15432 is in use, set `CLINIC_POSTGRES_HOST_PORT` before starting Compose
 | GET | `/api/v1/health` | Public application and database health check. |
 | GET | `/api/v1/clinic/info` | Public clinic name and welcome message. |
 
-The CMS admin paths are covered by a security filter for the Keycloak `ADMIN` realm role. The CMS, booking, and visit APIs are proposals in the draft documentation.
+The [CMS API](docs/api-contract.md#cms-approved-november-16-2026) supports admin page management and public reads of published translations. Admin routes require the Keycloak `ADMIN` realm role. The booking and visit APIs remain proposals in the draft documentation.
 
 For staff JWT validation, configure a reachable Keycloak issuer with `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI`. The `local` profile also accepts `KEYCLOAK_ISSUER_URI` in `.env` and defaults to `http://localhost:8081/realms/sokhasa-clinic`. Tokens must include `sokhasa-api` in `aud` and carry staff roles in `realm_access.roles`. Keycloak runs separately from this repository.
+
+To enable CMS image uploads and signed image URLs, set `R2_ENDPOINT`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, and `R2_SECRET_ACCESS_KEY` on the backend service. Text-only pages can be created and read without R2.
 
 For a frontend running on your machine, set `BACKEND_BASE_URL=http://localhost:8080` in `clinic-frontend/.env.local`. For a deployed frontend, use the deployed API origin.
 
