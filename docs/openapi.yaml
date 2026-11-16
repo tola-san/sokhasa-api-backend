@@ -1,17 +1,22 @@
 openapi: 3.1.0
 info:
   title: Sokhasa Clinic API
-  version: 0.1.0
+  version: 1.0.0
+  description: REST API specification for Sokhasa Clinic Appointment Booking and CMS. Interactive reference rendered via Scalar.
 servers:
   - url: /api/v1
+    description: Base API v1 endpoint
 paths:
   /health:
     get:
+      tags:
+        - System
       operationId: getHealth
-      summary: Check backend and database health
+      summary: Deployment and database health check
+      description: Returns HTTP 200 when backend and database are healthy. Returns 503 when down.
       responses:
         '200':
-          description: Application is healthy
+          description: Application and database are healthy
           content:
             application/json:
               schema:
@@ -19,13 +24,17 @@ paths:
                 required: [status]
                 properties:
                   status:
-                    const: UP
+                    type: string
+                    example: UP
         '503':
-          description: Application is unavailable
+          description: Service Unavailable
+
   /clinic/info:
     get:
+      tags:
+        - Public Clinic
       operationId: getClinicInfo
-      summary: Get the public clinic name and welcome message
+      summary: Public clinic name and welcome message
       responses:
         '200':
           description: Clinic information
@@ -37,360 +46,137 @@ paths:
                 properties:
                   name:
                     type: string
+                    example: Clinic Sokhasa
                   message:
                     type: string
-              example:
-                name: Clinic Sokhasa
-                message: Welcome to Clinic Sokhasa.
+                    example: Welcome to Clinic Sokhasa.
 
-  /public/pages/{slug}:
+  /admin/homepage/banner:
     get:
       tags:
-        - Public CMS
-      operationId: getPublicPage
-      summary: Get published page content by slug and language
-      parameters:
-        - name: slug
-          in: path
-          required: true
-          schema:
-            type: string
-            example: about-us
-        - name: lang
-          in: query
-          required: true
-          description: Language code (km, en, or zh)
-          schema:
-            type: string
-            enum: [km, en, zh]
-            example: en
-      responses:
-        '200':
-          description: Published localized page content
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PublicPageWrapper'
-        '400':
-          description: Invalid language parameter
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '404':
-          description: Page or requested translation not found
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-
-  /admin/pages:
-    get:
-      tags:
-        - Admin CMS Pages
+        - Admin Homepage Banner
       security:
         - BearerAuth: []
-      operationId: listPages
-      summary: Paginated list of CMS pages
-      parameters:
-        - name: page
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 0
-        - name: size
-          in: query
-          required: false
-          schema:
-            type: integer
-            default: 20
-        - name: status
-          in: query
-          required: false
-          schema:
-            type: string
-            enum: [DRAFT, PUBLISHED]
-        - name: search
-          in: query
-          required: false
-          schema:
-            type: string
-        - name: sort
-          in: query
-          required: false
-          schema:
-            type: string
-            default: updatedAt,desc
+      operationId: getAdminHomepageBanner
+      summary: Get the current homepage hero banner
+      description: |
+        Returns the first slide of the public homepage hero photo slider and its strong ETag.
+        Before the first publish every field is null and the ETag is "0".
       responses:
         '200':
-          description: List of page summaries with pagination
+          description: Current banner
+          headers:
+            ETag:
+              description: Strong revision tag to send in If-Match. "0" before the first publish.
+              schema:
+                type: string
+                example: '"3"'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PageListingResponse'
+                $ref: '#/components/schemas/AdminBannerWrapper'
         '401':
-          description: Unauthorized
+          description: Missing or invalid bearer token
         '403':
-          description: Forbidden (requires ADMIN role)
-
-    post:
-      tags:
-        - Admin CMS Pages
-      security:
-        - BearerAuth: []
-      operationId: createPage
-      summary: Create a new CMS page in draft status
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SavePageRequest'
-      responses:
-        '201':
-          description: Page created successfully
-          headers:
-            Location:
-              description: URI of the newly created page
-              schema:
-                type: string
-            ETag:
-              description: Strong revision ETag (e.g. "1")
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PageDetailWrapper'
-        '400':
-          description: Validation error
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '409':
-          description: Slug already exists
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-
-  /admin/pages/{id}:
-    get:
-      tags:
-        - Admin CMS Pages
-      security:
-        - BearerAuth: []
-      operationId: getPage
-      summary: Get full CMS page details
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '200':
-          description: Page detail with translations
-          headers:
-            ETag:
-              description: Strong revision ETag (e.g. "1")
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PageDetailWrapper'
-        '404':
-          description: Page not found
-
-    put:
-      tags:
-        - Admin CMS Pages
-      security:
-        - BearerAuth: []
-      operationId: updatePage
-      summary: Update draft translations for an existing page
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: If-Match
-          in: header
-          required: true
-          description: Current revision ETag (e.g. "1")
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SavePageRequest'
-      responses:
-        '200':
-          description: Page updated successfully
-          headers:
-            ETag:
-              description: New revision ETag
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PageDetailWrapper'
-        '412':
-          description: Revision mismatch (stale If-Match header)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-        '428':
-          description: If-Match header required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-
-    delete:
-      tags:
-        - Admin CMS Pages
-      security:
-        - BearerAuth: []
-      operationId: deletePage
-      summary: Delete an unpublished page
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: If-Match
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        '204':
-          description: Page deleted successfully
-        '409':
-          description: Page is currently published (unpublish before deleting)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProblemDetails'
-
-  /admin/pages/{id}/publish:
+          description: Caller lacks the ADMIN role
     patch:
       tags:
-        - Admin CMS Pages
+        - Admin Homepage Banner
       security:
         - BearerAuth: []
-      operationId: publishPage
-      summary: Publish selected translations to make them live
+      operationId: publishHomepageBanner
+      summary: Publish or update the homepage hero banner
+      description: |
+        Publishes immediately. The first publish requires all four fields. Later requests may send
+        any non-empty subset; omitted fields keep their current values. A replacement image requires
+        altText in the same request. The live banner switches only after the image upload and the
+        database update both succeed.
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
         - name: If-Match
           in: header
           required: true
+          description: ETag from the latest GET or PATCH response.
           schema:
             type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PublishPageRequest'
-      responses:
-        '200':
-          description: Page published successfully
-          headers:
-            ETag:
-              description: New revision ETag
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PageDetailWrapper'
-
-  /admin/pages/{id}/unpublish:
-    patch:
-      tags:
-        - Admin CMS Pages
-      security:
-        - BearerAuth: []
-      operationId: unpublishPage
-      summary: Unpublish page taking all live translations offline
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
-        - name: If-Match
-          in: header
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Page unpublished successfully
-          headers:
-            ETag:
-              description: New revision ETag
-              schema:
-                type: string
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PageDetailWrapper'
-
-  /admin/media/upload:
-    post:
-      tags:
-        - Admin Media
-      security:
-        - BearerAuth: []
-      operationId: uploadMedia
-      summary: Upload an image asset to Cloudflare R2
+            example: '"3"'
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file]
               properties:
-                file:
+                image:
                   type: string
                   format: binary
-                  description: Image file (JPEG, PNG, or WebP up to 5 MiB)
+                  description: JPEG, PNG, or WebP up to 5 MiB and 40 million pixels.
+                altText:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: Sokhasa Clinic staff standing outside the clinic
+                heading:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                  example: Your Comfort, Our Priority
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: Experience gentle, personalized care designed for your peace of mind.
       responses:
-        '201':
-          description: Image uploaded and registered
+        '200':
+          description: Banner published
+          headers:
+            ETag:
+              description: New strong revision tag.
+              schema:
+                type: string
+                example: '"4"'
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/MediaUploadWrapper'
+                $ref: '#/components/schemas/AdminBannerWrapper'
+        '400':
+          description: Missing or invalid fields, empty request, image without altText, or undecodable image
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '412':
+          description: If-Match does not match the current banner revision (VERSION_MISMATCH)
         '413':
-          description: Image exceeds 5 MiB limit
+          description: Image exceeds 5 MiB (IMAGE_TOO_LARGE)
         '415':
-          description: Unsupported image format
+          description: Image is not JPEG, PNG, or WebP (UNSUPPORTED_IMAGE)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
         '503':
-          description: Storage unavailable
+          description: Media storage unavailable (STORAGE_UNAVAILABLE)
+
+  /public/homepage/banner:
+    get:
+      tags:
+        - Public Homepage Banner
+      operationId: getPublicHomepageBanner
+      summary: Get the published homepage hero banner
+      description: |
+        imageUrl is a signed Cloudflare R2 URL that expires after five minutes, so responses are
+        sent with Cache-Control no-store.
+      responses:
+        '200':
+          description: Published banner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBannerWrapper'
+        '404':
+          description: No banner has been published yet (BANNER_NOT_FOUND); use the bundled first slide
 
 components:
   securitySchemes:
@@ -400,212 +186,60 @@ components:
       bearerFormat: JWT
       description: Keycloak JWT access token with ROLE_ADMIN
 
-  schemas:
-    ImageDto:
-      type: object
-      required: [mediaId, altText]
-      properties:
-        mediaId:
-          type: string
-          format: uuid
-        altText:
-          type: string
-          maxLength: 200
 
-    SignedImageDto:
+  schemas:
+    AdminBanner:
       type: object
-      required: [url, altText]
+      required: [imageUrl, fileName, altText, heading, description, publishedAt]
       properties:
-        url:
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+          description: Signed URL valid for five minutes. Null before the first publish.
+        fileName:
+          type: [string, 'null']
+          example: clinic-team.webp
+        altText:
+          type: [string, 'null']
+          example: Sokhasa Clinic staff standing outside the clinic
+        heading:
+          type: [string, 'null']
+          example: Your Comfort, Our Priority
+        description:
+          type: [string, 'null']
+          example: Experience gentle, personalized care designed for your peace of mind.
+        publishedAt:
+          type: [string, 'null']
+          format: date-time
+
+    AdminBannerWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminBanner'
+
+    PublicBanner:
+      type: object
+      required: [imageUrl, altText, heading, description]
+      properties:
+        imageUrl:
           type: string
           format: uri
+          description: Signed URL valid for five minutes.
         altText:
           type: string
+        heading:
+          type: string
+        description:
+          type: string
 
-    TranslationDto:
+    PublicBannerWrapper:
       type: object
-      required: [languageCode, title, content]
-      properties:
-        languageCode:
-          type: string
-          enum: [km, en, zh]
-        title:
-          type: string
-          maxLength: 160
-        content:
-          type: string
-          maxLength: 100000
-        image:
-          $ref: '#/components/schemas/ImageDto'
-
-    SavePageRequest:
-      type: object
-      required: [slug, translations]
-      properties:
-        slug:
-          type: string
-          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
-          maxLength: 80
-        translations:
-          type: array
-          minItems: 1
-          maxItems: 3
-          items:
-            $ref: '#/components/schemas/TranslationDto'
-
-    PublishPageRequest:
-      type: object
-      required: [languageCodes]
-      properties:
-        languageCodes:
-          type: array
-          minItems: 1
-          maxItems: 3
-          items:
-            type: string
-            enum: [km, en, zh]
-
-    PageDetailResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        slug:
-          type: string
-        status:
-          type: string
-          enum: [DRAFT, PUBLISHED]
-        translations:
-          type: array
-          items:
-            $ref: '#/components/schemas/TranslationDto'
-        publishedLanguageCodes:
-          type: array
-          items:
-            type: string
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    PageDetailWrapper:
-      type: object
+      required: [data]
       properties:
         data:
-          $ref: '#/components/schemas/PageDetailResponse'
-
-    PageTitleDto:
-      type: object
-      properties:
-        languageCode:
-          type: string
-        title:
-          type: string
-
-    PageSummaryResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        slug:
-          type: string
-        status:
-          type: string
-          enum: [DRAFT, PUBLISHED]
-        translations:
-          type: array
-          items:
-            $ref: '#/components/schemas/PageTitleDto'
-        publishedLanguageCodes:
-          type: array
-          items:
-            type: string
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    PaginationDto:
-      type: object
-      properties:
-        page:
-          type: integer
-        size:
-          type: integer
-        totalElements:
-          type: integer
-        totalPages:
-          type: integer
-        hasNext:
-          type: boolean
-        hasPrevious:
-          type: boolean
-
-    PageListingResponse:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            $ref: '#/components/schemas/PageSummaryResponse'
-        pagination:
-          $ref: '#/components/schemas/PaginationDto'
-
-    PublicPageResponse:
-      type: object
-      properties:
-        slug:
-          type: string
-        status:
-          type: string
-        languageCode:
-          type: string
-        title:
-          type: string
-        content:
-          type: string
-        image:
-          $ref: '#/components/schemas/SignedImageDto'
-          nullable: true
-
-    PublicPageWrapper:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/PublicPageResponse'
-
-    MediaUploadResponse:
-      type: object
-      properties:
-        id:
-          type: string
-          format: uuid
-        fileName:
-          type: string
-        mimeType:
-          type: string
-        size:
-          type: integer
-
-    MediaUploadWrapper:
-      type: object
-      properties:
-        data:
-          $ref: '#/components/schemas/MediaUploadResponse'
+          $ref: '#/components/schemas/PublicBanner'
 
     ProblemDetails:
       type: object
@@ -621,10 +255,10 @@ components:
           example: 400
         detail:
           type: string
-          example: Supply exactly one supported language.
+          example: Heading must be 1 to 80 characters.
         instance:
           type: string
-          example: /api/v1/public/pages/about-us
+          example: /api/v1/admin/homepage/banner
         timestamp:
           type: string
           format: date-time
