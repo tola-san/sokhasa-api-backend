@@ -47,7 +47,7 @@ public class CmsExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Map<String, Object>> handleDataIntegrityViolation(Exception ex, HttpServletRequest request) {
-        return buildErrorResponse(409, "SLUG_ALREADY_EXISTS", "The page conflicts with an existing record.", request);
+        return buildErrorResponse(409, "CONFLICT", "The request conflicts with the current data.", request);
     }
 
     @ExceptionHandler(SdkException.class)

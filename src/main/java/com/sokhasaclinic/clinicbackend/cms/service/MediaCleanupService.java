@@ -35,6 +35,18 @@ public class MediaCleanupService {
     }
 
     /**
+     * Schedules an object for deletion on the next cleanup run. Call this in the transaction that
+     * removes the object's {@code cms_media} row, so the deletion is retried if storage fails.
+     */
+    public void scheduleNow(String objectKey) {
+        jdbcTemplate.update(
+                "insert into clinic.cms_upload_cleanup(object_key, retry_after) values (?, now()) "
+                        + "on conflict (object_key) do update set retry_after = excluded.retry_after",
+                objectKey
+        );
+    }
+
+    /**
      * Completes and removes a tracked object key once successfully associated with an entity.
      */
     public void complete(String objectKey) {

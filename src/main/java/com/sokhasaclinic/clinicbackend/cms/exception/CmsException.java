@@ -32,7 +32,15 @@ public class CmsException extends RuntimeException {
         return new CmsException(400, "VALIDATION_ERROR", message);
     }
 
-    public static CmsException missing() {
-        return new CmsException(404, "PAGE_NOT_FOUND", "Page translation was not found.");
+    public static CmsException versionRequired() {
+        return new CmsException(428, "VERSION_REQUIRED", "If-Match is required.");
+    }
+
+    public static CmsException versionMismatch() {
+        return new CmsException(412, "VERSION_MISMATCH", "Reload the banner before saving.");
+    }
+
+    public static CmsException bannerNotFound() {
+        return new CmsException(404, "BANNER_NOT_FOUND", "No homepage banner has been published.");
     }
 }

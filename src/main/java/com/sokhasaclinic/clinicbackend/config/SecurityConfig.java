@@ -36,8 +36,9 @@ public class SecurityConfig {
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri)
 
             throws Exception {
-        // Apply this filter chain to CMS admin paths. Public routes sit outside it.
-        http.securityMatcher("/api/v1/admin/pages", "/api/v1/admin/pages/**", "/api/v1/admin/media/upload")
+        // Every admin path requires ADMIN, so new admin endpoints are never public by accident.
+        // Public routes sit outside this chain.
+        http.securityMatcher("/api/v1/admin/**")
                 .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("ADMIN"))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 // These paths authenticate through the Authorization header, so CSRF protection is unnecessary here.

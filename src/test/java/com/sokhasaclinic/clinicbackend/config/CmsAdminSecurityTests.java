@@ -2,7 +2,7 @@ package com.sokhasaclinic.clinicbackend.config;
 
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -36,8 +36,7 @@ import com.sokhasaclinic.clinicbackend.clinic.ClinicInfoService;
 @TestPropertySource(properties = "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://issuer.example/realms/clinic")
 class CmsAdminSecurityTests {
 
-    private static final String PAGES = "/api/v1/admin/pages";
-    private static final String MEDIA_UPLOAD = "/api/v1/admin/media/upload";
+    private static final String BANNER = "/api/v1/admin/homepage/banner";
 
     private MockMvc mvc;
 
@@ -49,33 +48,40 @@ class CmsAdminSecurityTests {
 
     @Test
     void guestCannotAccessAdminRoutes() throws Exception {
-        mvc.perform(post(PAGES)).andExpect(status().isUnauthorized())
+        mvc.perform(patch(BANNER)).andExpect(status().isUnauthorized())
                 .andExpect(header().string("WWW-Authenticate", matchesPattern("Bearer(?: .*)?")));
-        mvc.perform(get(PAGES + "/some-id")).andExpect(status().isUnauthorized());
-        mvc.perform(post(MEDIA_UPLOAD)).andExpect(status().isUnauthorized());
+        mvc.perform(get(BANNER)).andExpect(status().isUnauthorized());
+        // Any future admin route is protected without changing the security matcher.
+        mvc.perform(get("/api/v1/admin/not-yet-built")).andExpect(status().isUnauthorized());
     }
 
     @Test
     void invalidTokenIsUnauthorized() throws Exception {
-        mvc.perform(post(PAGES).header("Authorization", "Bearer invalid"))
+        mvc.perform(get(BANNER).header("Authorization", "Bearer invalid"))
                 .andExpect(status().isUnauthorized());
     }
 
     @Test
-    void receptionistCannotCreatePage() throws Exception {
-        mvc.perform(post(PAGES).header("Authorization", "Bearer receptionist"))
+    void receptionistCannotPublishBanner() throws Exception {
+        mvc.perform(patch(BANNER).header("Authorization", "Bearer receptionist"))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void adminCanPassSecurityFilter() throws Exception {
-        mvc.perform(post(PAGES).header("Authorization", "Bearer administrator"))
+        mvc.perform(get(BANNER).header("Authorization", "Bearer administrator"))
                 .andExpect(status().isNotFound());
     }
 
     @Test
     void clinicInfoRemainsPublic() throws Exception {
         mvc.perform(get("/api/v1/clinic/info")).andExpect(status().isOk());
+    }
+
+    @Test
+    void publicBannerRouteIsOutsideAdminChain() throws Exception {
+        // No banner controller is loaded here, so a public route reaches MVC and returns 404, not 401.
+        mvc.perform(get("/api/v1/public/homepage/banner")).andExpect(status().isNotFound());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

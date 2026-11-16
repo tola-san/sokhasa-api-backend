@@ -243,6 +243,9 @@ Use `409 Conflict` for booking conflicts and other resource-state conflicts.
 
 ## 4. CMS Page Management APIs
 
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
+
+
 **Phase 03 · Approved**
 
 Clinic Admins (`ADMIN`) use a Keycloak access token to create, edit, and publish localized pages. Visitors read published translations through the [public page API](#51-get-a-published-page-translation). Admins can [upload an image](#132-upload-an-image) for use in a translation.
@@ -381,6 +384,9 @@ Use one strong `If-Match` token from the last page-detail response, for example 
 ## 5. Public Website APIs
 
 ### 5.1 Get a published page translation
+
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
+
 
 `GET /api/v1/public/pages/{slug}?lang=en` requires no authentication. Supply exactly one `lang` value from `km`, `en`, and `zh`. Missing or unsupported values return `400 VALIDATION_ERROR`. A missing page, an unpublished page, or an unavailable live language returns `404 PAGE_NOT_FOUND`. The website passes its active language. The API uses that language exactly.
 
@@ -1046,6 +1052,9 @@ Clinic Admins (`ADMIN`) need a valid bearer token for every media management rou
 The initial CMS has nine API operations, including the eight page operations and one image upload.
 
 ### 13.2 Upload an image
+
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
+
 
 Send a `multipart/form-data` request with one required part named `file`. The API accepts JPEG, PNG, and WebP up to 5 MiB and limits decoding to 40 million pixels. It returns `400` for a missing file or unreadable image, `413` for a file above the size limit, and `415` for an unsupported format.
 
