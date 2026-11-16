@@ -44,6 +44,10 @@ jobs:
           SPRING_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports[5432] }}/clinic_test
           SPRING_DATASOURCE_USERNAME: clinic_ci
           SPRING_DATASOURCE_PASSWORD: clinic_ci
+          # Enables HomepageBannerPostgresTests (Flyway migrations and banner publishing on PostgreSQL).
+          CLINIC_TEST_DATABASE_URL: jdbc:postgresql://127.0.0.1:${{ job.services.postgres.ports[5432] }}/clinic_test
+          CLINIC_TEST_DATABASE_USERNAME: clinic_ci
+          CLINIC_TEST_DATABASE_PASSWORD: clinic_ci
         run: bash ./mvnw --batch-mode --no-transfer-progress verify
 
   docker:

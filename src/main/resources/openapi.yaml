@@ -1,0 +1,268 @@
+openapi: 3.1.0
+info:
+  title: Sokhasa Clinic API
+  version: 1.0.0
+  description: REST API specification for Sokhasa Clinic Appointment Booking and CMS. Interactive reference rendered via Scalar.
+servers:
+  - url: /api/v1
+    description: Base API v1 endpoint
+paths:
+  /health:
+    get:
+      tags:
+        - System
+      operationId: getHealth
+      summary: Deployment and database health check
+      description: Returns HTTP 200 when backend and database are healthy. Returns 503 when down.
+      responses:
+        '200':
+          description: Application and database are healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    example: UP
+        '503':
+          description: Service Unavailable
+
+  /clinic/info:
+    get:
+      tags:
+        - Public Clinic
+      operationId: getClinicInfo
+      summary: Public clinic name and welcome message
+      responses:
+        '200':
+          description: Clinic information
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, message]
+                properties:
+                  name:
+                    type: string
+                    example: Clinic Sokhasa
+                  message:
+                    type: string
+                    example: Welcome to Clinic Sokhasa.
+
+  /admin/homepage/banner:
+    get:
+      tags:
+        - Admin Homepage Banner
+      security:
+        - BearerAuth: []
+      operationId: getAdminHomepageBanner
+      summary: Get the current homepage hero banner
+      description: |
+        Returns the first slide of the public homepage hero photo slider and its strong ETag.
+        Before the first publish every field is null and the ETag is "0".
+      responses:
+        '200':
+          description: Current banner
+          headers:
+            ETag:
+              description: Strong revision tag to send in If-Match. "0" before the first publish.
+              schema:
+                type: string
+                example: '"3"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBannerWrapper'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+    patch:
+      tags:
+        - Admin Homepage Banner
+      security:
+        - BearerAuth: []
+      operationId: publishHomepageBanner
+      summary: Publish or update the homepage hero banner
+      description: |
+        Publishes immediately. The first publish requires all four fields. Later requests may send
+        any non-empty subset; omitted fields keep their current values. A replacement image requires
+        altText in the same request. The live banner switches only after the image upload and the
+        database update both succeed.
+      parameters:
+        - name: If-Match
+          in: header
+          required: true
+          description: ETag from the latest GET or PATCH response.
+          schema:
+            type: string
+            example: '"3"'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG, or WebP up to 5 MiB and 40 million pixels.
+                altText:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: Sokhasa Clinic staff standing outside the clinic
+                heading:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                  example: Your Comfort, Our Priority
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                  example: Experience gentle, personalized care designed for your peace of mind.
+      responses:
+        '200':
+          description: Banner published
+          headers:
+            ETag:
+              description: New strong revision tag.
+              schema:
+                type: string
+                example: '"4"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBannerWrapper'
+        '400':
+          description: Missing or invalid fields, empty request, image without altText, or undecodable image
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '412':
+          description: If-Match does not match the current banner revision (VERSION_MISMATCH)
+        '413':
+          description: Image exceeds 5 MiB (IMAGE_TOO_LARGE)
+        '415':
+          description: Image is not JPEG, PNG, or WebP (UNSUPPORTED_IMAGE)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+        '503':
+          description: Media storage unavailable (STORAGE_UNAVAILABLE)
+
+  /public/homepage/banner:
+    get:
+      tags:
+        - Public Homepage Banner
+      operationId: getPublicHomepageBanner
+      summary: Get the published homepage hero banner
+      description: |
+        imageUrl is a signed Cloudflare R2 URL that expires after five minutes, so responses are
+        sent with Cache-Control no-store.
+      responses:
+        '200':
+          description: Published banner
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicBannerWrapper'
+        '404':
+          description: No banner has been published yet (BANNER_NOT_FOUND); use the bundled first slide
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Keycloak JWT access token with ROLE_ADMIN
+
+
+  schemas:
+    AdminBanner:
+      type: object
+      required: [imageUrl, fileName, altText, heading, description, publishedAt]
+      properties:
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+          description: Signed URL valid for five minutes. Null before the first publish.
+        fileName:
+          type: [string, 'null']
+          example: clinic-team.webp
+        altText:
+          type: [string, 'null']
+          example: Sokhasa Clinic staff standing outside the clinic
+        heading:
+          type: [string, 'null']
+          example: Your Comfort, Our Priority
+        description:
+          type: [string, 'null']
+          example: Experience gentle, personalized care designed for your peace of mind.
+        publishedAt:
+          type: [string, 'null']
+          format: date-time
+
+    AdminBannerWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminBanner'
+
+    PublicBanner:
+      type: object
+      required: [imageUrl, altText, heading, description]
+      properties:
+        imageUrl:
+          type: string
+          format: uri
+          description: Signed URL valid for five minutes.
+        altText:
+          type: string
+        heading:
+          type: string
+        description:
+          type: string
+
+    PublicBannerWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicBanner'
+
+    ProblemDetails:
+      type: object
+      properties:
+        type:
+          type: string
+          example: VALIDATION_ERROR
+        title:
+          type: string
+          example: Bad Request
+        status:
+          type: integer
+          example: 400
+        detail:
+          type: string
+          example: Heading must be 1 to 80 characters.
+        instance:
+          type: string
+          example: /api/v1/admin/homepage/banner
+        timestamp:
+          type: string
+          format: date-time
+        errors:
+          type: array
+          items:
+            type: string

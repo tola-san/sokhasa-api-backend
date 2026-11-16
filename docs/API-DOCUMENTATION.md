@@ -243,9 +243,12 @@ Use `409 Conflict` for booking conflicts and other resource-state conflicts.
 
 ## 4. CMS Page Management APIs
 
-**Phase 03 · Proposed for Team Lead review**
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
 
-The CMS manages localized informational pages. Clinic Admins (`ADMIN`) manage pages with a Keycloak bearer token. The proposed policy reserves all admin page routes for Clinic Admins. Guests read published content through [the public page API](#5-public-website-apis). Admins can [upload an image](#132-upload-an-image) for use in a translation.
+
+**Phase 03 · Approved**
+
+Clinic Admins (`ADMIN`) use a Keycloak access token to create, edit, and publish localized pages. Visitors read published translations through the [public page API](#51-get-a-published-page-translation). Admins can [upload an image](#132-upload-an-image) for use in a translation.
 
 ### 4.1 Routes
 
@@ -380,9 +383,10 @@ Use one strong `If-Match` token from the last page-detail response, for example 
 
 ## 5. Public Website APIs
 
-**Phase 04 · Proposed for Team Lead review**
-
 ### 5.1 Get a published page translation
+
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
+
 
 `GET /api/v1/public/pages/{slug}?lang=en` requires no authentication. Supply exactly one `lang` value from `km`, `en`, and `zh`. Missing or unsupported values return `400 VALIDATION_ERROR`. A missing page, an unpublished page, or an unavailable live language returns `404 PAGE_NOT_FOUND`. The website passes its active language. The API uses that language exactly.
 
@@ -1032,7 +1036,7 @@ TELEGRAM_RETRY_MAX_ATTEMPTS=5
 
 ## 13. Media Management APIs
 
-**Upload in Phase 03 · Media library in Phase 10 · Proposed for Team Lead review**
+**Phase 03 upload approved. Phase 10 media library proposed.**
 
 Clinic Admins (`ADMIN`) need a valid bearer token for every media management route.
 
@@ -1049,7 +1053,10 @@ The initial CMS has nine API operations, including the eight page operations and
 
 ### 13.2 Upload an image
 
-Send a `multipart/form-data` request with one required part named `file`. The proposed limit is 5 MiB per file. Accept JPEG, PNG, and WebP. Check the actual format and that the image can be decoded before storing it. Return `400` for a missing file or unreadable image, `413` for a file above the size limit, and `415` for an unsupported format.
+> **Superseded on November 16, 2026.** The CMS page and media-upload endpoints in this section were removed in favour of the homepage banner API. See [API contract](api-contract.md).
+
+
+Send a `multipart/form-data` request with one required part named `file`. The API accepts JPEG, PNG, and WebP up to 5 MiB and limits decoding to 40 million pixels. It returns `400` for a missing file or unreadable image, `413` for a file above the size limit, and `415` for an unsupported format.
 
 ```http
 POST /api/v1/admin/media/upload
