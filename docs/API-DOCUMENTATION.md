@@ -243,9 +243,9 @@ Use `409 Conflict` for booking conflicts and other resource-state conflicts.
 
 ## 4. CMS Page Management APIs
 
-**Phase 03 · Proposed for Team Lead review**
+**Phase 03 · Approved**
 
-The CMS manages localized informational pages. Clinic Admins (`ADMIN`) manage pages with a Keycloak bearer token. The proposed policy reserves all admin page routes for Clinic Admins. Guests read published content through [the public page API](#5-public-website-apis). Admins can [upload an image](#132-upload-an-image) for use in a translation.
+Clinic Admins (`ADMIN`) use a Keycloak access token to create, edit, and publish localized pages. Visitors read published translations through the [public page API](#51-get-a-published-page-translation). Admins can [upload an image](#132-upload-an-image) for use in a translation.
 
 ### 4.1 Routes
 
@@ -379,8 +379,6 @@ Use one strong `If-Match` token from the last page-detail response, for example 
 ---
 
 ## 5. Public Website APIs
-
-**Phase 04 · Proposed for Team Lead review**
 
 ### 5.1 Get a published page translation
 
@@ -1032,7 +1030,7 @@ TELEGRAM_RETRY_MAX_ATTEMPTS=5
 
 ## 13. Media Management APIs
 
-**Upload in Phase 03 · Media library in Phase 10 · Proposed for Team Lead review**
+**Phase 03 upload approved. Phase 10 media library proposed.**
 
 Clinic Admins (`ADMIN`) need a valid bearer token for every media management route.
 
@@ -1049,7 +1047,7 @@ The initial CMS has nine API operations, including the eight page operations and
 
 ### 13.2 Upload an image
 
-Send a `multipart/form-data` request with one required part named `file`. The proposed limit is 5 MiB per file. Accept JPEG, PNG, and WebP. Check the actual format and that the image can be decoded before storing it. Return `400` for a missing file or unreadable image, `413` for a file above the size limit, and `415` for an unsupported format.
+Send a `multipart/form-data` request with one required part named `file`. The API accepts JPEG, PNG, and WebP up to 5 MiB and limits decoding to 40 million pixels. It returns `400` for a missing file or unreadable image, `413` for a file above the size limit, and `415` for an unsupported format.
 
 ```http
 POST /api/v1/admin/media/upload
