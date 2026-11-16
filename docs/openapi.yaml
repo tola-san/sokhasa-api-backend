@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: Sokhasa Clinic API
+  version: 0.1.0
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Check backend and database health
+      responses:
+        '200':
+          description: Application is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    const: UP
+        '503':
+          description: Application is unavailable
+  /clinic/info:
+    get:
+      operationId: getClinicInfo
+      summary: Get the public clinic name and welcome message
+      responses:
+        '200':
+          description: Clinic information
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, message]
+                properties:
+                  name:
+                    type: string
+                  message:
+                    type: string
+              example:
+                name: Clinic Sokhasa
+                message: Welcome to Clinic Sokhasa.
