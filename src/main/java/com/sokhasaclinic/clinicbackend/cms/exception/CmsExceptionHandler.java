@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -24,8 +26,16 @@ import software.amazon.awssdk.core.exception.SdkException;
 @RestControllerAdvice(basePackages = "com.sokhasaclinic.clinicbackend.cms.controller")
 public class CmsExceptionHandler {
 
+    private static final Logger log = LoggerFactory.getLogger(CmsExceptionHandler.class);
+
     @ExceptionHandler(CmsException.class)
     public ResponseEntity<Map<String, Object>> handleCmsException(CmsException ex, HttpServletRequest request) {
+        // Server-side failures (for example STORAGE_UNAVAILABLE when R2 is not configured) must be
+        // visible in the deployment logs; client errors stay quiet.
+        if (ex.getStatus() >= 500) {
+            log.error("CMS {} {} failed: {} {}", request.getMethod(), request.getRequestURI(),
+                    ex.getType(), ex.getMessage(), ex);
+        }
         return buildErrorResponse(ex.getStatus(), ex.getType(), ex.getMessage(), request);
     }
 
@@ -52,6 +62,8 @@ public class CmsExceptionHandler {
 
     @ExceptionHandler(SdkException.class)
     public ResponseEntity<Map<String, Object>> handleStorageException(Exception ex, HttpServletRequest request) {
+        log.error("CMS {} {} failed: media storage error: {}", request.getMethod(), request.getRequestURI(),
+                ex.getMessage(), ex);
         return buildErrorResponse(503, "STORAGE_UNAVAILABLE", "Media storage is temporarily unavailable.", request);
     }
 
