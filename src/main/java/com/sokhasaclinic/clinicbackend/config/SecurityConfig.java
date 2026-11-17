@@ -5,10 +5,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import jakarta.servlet.DispatcherType;
+
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,6 +21,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationEntryPoint;
+import org.springframework.security.oauth2.server.resource.web.access.BearerTokenAccessDeniedHandler;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
 
@@ -29,23 +33,47 @@ public class SecurityConfig {
 
     private static final Set<String> STAFF_ROLES = Set.of("ADMIN", "RECEPTION");
 
+    /**
+     * Read-only routes anyone may call. Keep this list short and explicit: a route that is not
+     * listed here or matched by a role rule below is denied.
+     */
+    static final String[] PUBLIC_GET_ROUTES = {
+            "/api/v1/public/**",
+            "/api/v1/clinic/info",
+            "/api/v1/health",
+            "/api/v1/openapi.yaml",
+            "/api/v1/docs",
+            "/docs",
+            "/scalar",
+    };
+
+    /**
+     * The only filter chain for the application. It has no security matcher, so it covers every
+     * request, and it denies by default: a new controller stays unreachable until a rule here
+     * grants access to it.
+     */
     @Bean
-    SecurityFilterChain cmsAdminSecurity(
+    SecurityFilterChain apiSecurity(
             HttpSecurity http,
             ObjectProvider<JwtDecoder> jwtDecoder,
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri)
-
             throws Exception {
-        // Every admin path requires ADMIN, so new admin endpoints are never public by accident.
-        // Public routes sit outside this chain.
-        http.securityMatcher("/api/v1/admin/**")
-                .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("ADMIN"))
+        http.authorizeHttpRequests(requests -> requests
+                        // Let the container render errors (for example a 404 from a public route)
+                        // instead of turning them into 401.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
+                        .requestMatchers(HttpMethod.GET, PUBLIC_GET_ROUTES).permitAll()
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        // Add new role rules above this line, most specific first.
+                        .anyRequest().denyAll())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // These paths authenticate through the Authorization header, so CSRF protection is unnecessary here.
+                // Callers authenticate with the Authorization header, not cookies, so CSRF protection is unnecessary.
                 .csrf(AbstractHttpConfigurer::disable)
-                .exceptionHandling(errors -> errors.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()));
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint())
+                        .accessDeniedHandler(new BearerTokenAccessDeniedHandler()));
 
-        // With no issuer configured, the app can start and CMS admin requests still require authentication.
+        // With no issuer configured, the app can start and protected requests still require authentication.
         if (StringUtils.hasText(issuerUri)) {
             JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
             converter.setJwtGrantedAuthoritiesConverter(SecurityConfig::staffAuthorities);

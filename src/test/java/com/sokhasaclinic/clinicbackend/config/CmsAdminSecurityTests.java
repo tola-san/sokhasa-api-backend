@@ -3,6 +3,7 @@ package com.sokhasaclinic.clinicbackend.config;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -79,9 +80,31 @@ class CmsAdminSecurityTests {
     }
 
     @Test
-    void publicBannerRouteIsOutsideAdminChain() throws Exception {
+    void publicBannerRouteIsOpenToGuests() throws Exception {
         // No banner controller is loaded here, so a public route reaches MVC and returns 404, not 401.
         mvc.perform(get("/api/v1/public/homepage/banner")).andExpect(status().isNotFound());
+    }
+
+    @Test
+    void unlistedRoutesAreDeniedByDefault() throws Exception {
+        // A controller added later without a security rule must not become public.
+        mvc.perform(get("/api/v1/reception/appointments")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/appointments")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/actuator/env")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void unlistedRoutesStayDeniedForSignedInStaff() throws Exception {
+        mvc.perform(get("/api/v1/reception/appointments").header("Authorization", "Bearer administrator"))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/api/v1/reception/appointments").header("Authorization", "Bearer receptionist"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void publicRoutesAreReadOnly() throws Exception {
+        mvc.perform(post("/api/v1/public/homepage/banner")).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/clinic/info")).andExpect(status().isUnauthorized());
     }
 
     @TestConfiguration(proxyBeanMethods = false)
