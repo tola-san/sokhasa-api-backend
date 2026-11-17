@@ -10,7 +10,7 @@ import lombok.Getter;
 
 /**
  * The single homepage hero banner (first photo slide). Row {@code id = 1} always exists;
- * revision 0 means nothing has been published yet.
+ * revision 0 means nothing has been published yet. The image is shared by every language.
  */
 @Entity
 @Table(name = "cms_homepage_banner", schema = "clinic")
@@ -28,15 +28,6 @@ public class HomepageBanner {
     @Column(name = "media_id")
     private UUID mediaId;
 
-    @Column(name = "alt_text", length = 200)
-    private String altText;
-
-    @Column(length = 80)
-    private String heading;
-
-    @Column(length = 200)
-    private String description;
-
     @Column(name = "published_at")
     private Instant publishedAt;
 
@@ -51,20 +42,12 @@ public class HomepageBanner {
     }
 
     /**
-     * Applies the non-null values and advances the revision. Callers validate the values first.
+     * Records a publish and advances the revision. A null media ID keeps the current image. The
+     * text lives in {@link HomepageBannerTranslation} rows, written in the same transaction.
      */
-    public void publish(UUID newMediaId, String newAltText, String newHeading, String newDescription, Instant now) {
+    public void publish(UUID newMediaId, Instant now) {
         if (newMediaId != null) {
             mediaId = newMediaId;
-        }
-        if (newAltText != null) {
-            altText = newAltText;
-        }
-        if (newHeading != null) {
-            heading = newHeading;
-        }
-        if (newDescription != null) {
-            description = newDescription;
         }
         if (publishedAt == null) {
             publishedAt = now;

@@ -9,6 +9,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -36,7 +37,7 @@ public class CmsExceptionHandler {
             log.error("CMS {} {} failed: {} {}", request.getMethod(), request.getRequestURI(),
                     ex.getType(), ex.getMessage(), ex);
         }
-        return buildErrorResponse(ex.getStatus(), ex.getType(), ex.getMessage(), request);
+        return buildErrorResponse(ex.getStatus(), ex.getType(), ex.getMessage(), ex.getErrors(), request);
     }
 
     @ExceptionHandler({
@@ -44,7 +45,9 @@ public class CmsExceptionHandler {
             MethodArgumentTypeMismatchException.class,
             MissingServletRequestParameterException.class,
             MissingServletRequestPartException.class,
-            HttpMessageNotReadableException.class
+            HttpMessageNotReadableException.class,
+            // A translations part that is not sent as application/json.
+            HttpMediaTypeNotSupportedException.class
     })
     public ResponseEntity<Map<String, Object>> handleValidationException(Exception ex, HttpServletRequest request) {
         return buildErrorResponse(400, "VALIDATION_ERROR", "One or more fields are invalid.", request);
@@ -69,6 +72,11 @@ public class CmsExceptionHandler {
 
     private ResponseEntity<Map<String, Object>> buildErrorResponse(
             int status, String type, String detail, HttpServletRequest request) {
+        return buildErrorResponse(status, type, detail, List.of(), request);
+    }
+
+    private ResponseEntity<Map<String, Object>> buildErrorResponse(
+            int status, String type, String detail, List<Map<String, Object>> errors, HttpServletRequest request) {
         HttpStatus httpStatus = HttpStatus.resolve(status);
         String title = httpStatus != null ? httpStatus.getReasonPhrase() : "Error";
 
@@ -79,7 +87,7 @@ public class CmsExceptionHandler {
                 "detail", detail,
                 "instance", request.getRequestURI(),
                 "timestamp", Instant.now(),
-                "errors", List.of()
+                "errors", errors
         );
 
         return ResponseEntity.status(status)

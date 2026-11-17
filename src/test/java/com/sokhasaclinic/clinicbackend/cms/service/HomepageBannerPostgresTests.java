@@ -2,7 +2,6 @@ package com.sokhasaclinic.clinicbackend.cms.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
@@ -10,10 +9,12 @@ import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.sokhasaclinic.clinicbackend.cms.dto.BannerDtos.BannerText;
 import com.sokhasaclinic.clinicbackend.cms.dto.BannerDtos.BannerUpdate;
 import com.sokhasaclinic.clinicbackend.cms.dto.BannerDtos.VersionedBanner;
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsException;
 import com.sokhasaclinic.clinicbackend.cms.service.storage.MediaStorage;
+import com.sokhasaclinic.clinicbackend.common.i18n.Language;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -59,8 +60,9 @@ class HomepageBannerPostgresTests {
 
     @BeforeEach
     void resetBanner() {
-        jdbc.update("update clinic.cms_homepage_banner set revision = 0, media_id = null, alt_text = null, "
-                + "heading = null, description = null, published_at = null, updated_at = null");
+        jdbc.update("delete from clinic.cms_homepage_banner_translation");
+        jdbc.update("update clinic.cms_homepage_banner set revision = 0, media_id = null, "
+                + "published_at = null, updated_at = null");
         jdbc.update("delete from clinic.cms_media");
         jdbc.update("delete from clinic.cms_upload_cleanup");
         reset(mediaStorage);
@@ -68,67 +70,94 @@ class HomepageBannerPostgresTests {
     }
 
     @Test
-    void migrationsReplacePagesWithBanner() {
-        Integer pageTables = jdbc.queryForObject(
-                "select count(*) from information_schema.tables where table_schema = 'clinic' "
-                        + "and table_name in ('cms_pages', 'cms_translations')", Integer.class);
-        assertEquals(0, pageTables);
-        assertEquals(0L, service.getAdminBanner().revision());
-        assertNull(service.getAdminBanner().data().heading());
-        CmsException missing = assertThrows(CmsException.class, service::getPublicBanner);
-        assertEquals(404, missing.getStatus());
+    void migrationsMoveBannerTextIntoTranslations() {
+        Integer textColumns = jdbc.queryForObject(
+                "select count(*) from information_schema.columns where table_schema = 'clinic' "
+                        + "and table_name = 'cms_homepage_banner' "
+                        + "and column_name in ('heading', 'description', 'alt_text')", Integer.class);
+        assertEquals(0, textColumns);
+        VersionedBanner empty = service.getAdminBanner();
+        assertEquals(0L, empty.revision());
+        assertEquals(List.of(), empty.data().translations());
+        assertEquals(List.of("km", "en", "zh"), empty.data().missingLanguages());
+        assertEquals(404, assertThrows(CmsException.class, () -> service.getPublicBanner(Language.KM)).getStatus());
     }
 
     @Test
-    void firstPublishRequiresAllFields() throws Exception {
-        CmsException error = assertThrows(CmsException.class, () -> service.publish("\"0\"",
-                new BannerUpdate(png("clinic-team.png"), "Alt", "Heading", null)));
-        assertEquals(400, error.getStatus());
+    void firstPublishNeedsImageAndEveryLanguage() throws Exception {
+        CmsException noImage = assertThrows(CmsException.class,
+                () -> service.publish("\"0\"", new BannerUpdate(null, all("Heading"))));
+        assertEquals(400, noImage.getStatus());
+
+        CmsException englishOnly = assertThrows(CmsException.class, () -> service.publish("\"0\"",
+                new BannerUpdate(null, List.of(text("en", "Heading")))));
+        assertEquals(400, englishOnly.getStatus());
+
         verify(mediaStorage, never()).upload(anyString(), anyString(), org.mockito.ArgumentMatchers.any());
+        assertEquals(404, assertThrows(CmsException.class, () -> service.getPublicBanner(Language.EN)).getStatus());
     }
 
     @Test
-    void publishEditCaptionReplaceImageAndRejectStaleVersion() throws Exception {
-        VersionedBanner first = service.publish("\"0\"", new BannerUpdate(png("clinic-team.png"),
-                "Sokhasa Clinic staff standing outside the clinic", "Your Comfort, Our Priority",
-                "Experience gentle, personalized care designed for your peace of mind."));
+    void publishEditOneLanguageReplaceImageAndRejectStaleVersion() throws Exception {
+        VersionedBanner first = service.publish("\"0\"", new BannerUpdate(png("clinic-team.png"), all("Comfort")));
         assertEquals(1L, first.revision());
-        assertEquals("clinic-team.png", first.data().fileName());
+        assertEquals(List.of("km", "en", "zh"),
+                first.data().translations().stream().map(BannerText::languageCode).toList());
+        assertEquals(List.of(), first.data().missingLanguages());
         String firstKey = onlyMediaKey();
-        assertEquals("https://r2.test/" + firstKey, service.getPublicBanner().imageUrl());
+        assertEquals("https://r2.test/" + firstKey, service.getPublicBanner(Language.KM).imageUrl());
+        assertEquals("Comfort km", service.getPublicBanner(Language.KM).heading());
+        assertEquals("Comfort zh", service.getPublicBanner(Language.ZH).heading());
 
-        VersionedBanner caption = service.publish("\"1\"", new BannerUpdate(null, null, "New heading", null));
-        assertEquals(2L, caption.revision());
-        assertEquals("New heading", caption.data().heading());
-        assertEquals("clinic-team.png", caption.data().fileName());
+        VersionedBanner zhOnly = service.publish("\"1\"",
+                new BannerUpdate(null, List.of(text("zh", "新标题"))));
+        assertEquals(2L, zhOnly.revision());
+        assertEquals("新标题", service.getPublicBanner(Language.ZH).heading());
+        assertEquals("Comfort km", service.getPublicBanner(Language.KM).heading());
         assertEquals(firstKey, onlyMediaKey());
 
         CmsException stale = assertThrows(CmsException.class,
-                () -> service.publish("\"1\"", new BannerUpdate(null, null, "Lost update", null)));
+                () -> service.publish("\"1\"", new BannerUpdate(null, List.of(text("en", "Lost update")))));
         assertEquals(412, stale.getStatus());
-        assertEquals("New heading", service.getPublicBanner().heading());
+        assertEquals("Comfort en", service.getPublicBanner(Language.EN).heading());
 
-        CmsException noAlt = assertThrows(CmsException.class,
-                () -> service.publish("\"2\"", new BannerUpdate(png("lobby.png"), null, null, null)));
-        assertEquals(400, noAlt.getStatus());
-
-        VersionedBanner replaced = service.publish("\"2\"",
-                new BannerUpdate(png("lobby.png"), "Clinic lobby", null, null));
+        VersionedBanner replaced = service.publish("\"2\"", new BannerUpdate(png("lobby.png"), all("Lobby")));
         assertEquals(3L, replaced.revision());
         assertEquals("lobby.png", replaced.data().fileName());
-        assertEquals("New heading", replaced.data().heading());
+        assertEquals("Lobby en", service.getPublicBanner(Language.EN).altText());
         String secondKey = onlyMediaKey();
         assertNotEquals(firstKey, secondKey);
         verify(mediaStorage).delete(firstKey);
     }
 
     @Test
+    void englishOnlyBannerFromMigrationServesEnglishAndReportsMissing() throws Exception {
+        service.publish("\"0\"", new BannerUpdate(png("a.png"), all("Heading")));
+        // Simulate the state V4 leaves behind for a banner published before translation existed.
+        jdbc.update("delete from clinic.cms_homepage_banner_translation where language_code <> 'en'");
+
+        assertEquals("Heading en", service.getPublicBanner(Language.EN).heading());
+        assertEquals(404, assertThrows(CmsException.class, () -> service.getPublicBanner(Language.KM)).getStatus());
+        assertEquals(List.of("km", "zh"), service.getAdminBanner().data().missingLanguages());
+
+        CmsException kmOnly = assertThrows(CmsException.class,
+                () -> service.publish("\"1\"", new BannerUpdate(null, List.of(text("km", "ចំណងជើង")))));
+        assertEquals(409, kmOnly.getStatus());
+        assertEquals("TRANSLATION_MISSING", kmOnly.getType());
+        assertEquals(404, assertThrows(CmsException.class, () -> service.getPublicBanner(Language.KM)).getStatus());
+
+        service.publish("\"1\"", new BannerUpdate(null, List.of(text("km", "ចំណងជើង"), text("zh", "标题"))));
+        assertEquals(List.of(), service.getAdminBanner().data().missingLanguages());
+        assertEquals("ចំណងជើង", service.getPublicBanner(Language.KM).heading());
+    }
+
+    @Test
     void failedReplacementDeleteIsQueuedForCleanup() throws Exception {
-        service.publish("\"0\"", new BannerUpdate(png("a.png"), "Alt", "Heading", "Description"));
+        service.publish("\"0\"", new BannerUpdate(png("a.png"), all("Heading")));
         String firstKey = onlyMediaKey();
         org.mockito.Mockito.doThrow(new RuntimeException("R2 down")).when(mediaStorage).delete(firstKey);
 
-        service.publish("\"1\"", new BannerUpdate(png("b.png"), "Alt 2", null, null));
+        service.publish("\"1\"", new BannerUpdate(png("b.png"), all("Heading 2")));
 
         Integer queued = jdbc.queryForObject(
                 "select count(*) from clinic.cms_upload_cleanup where object_key = ? and retry_after <= now()",
@@ -138,7 +167,7 @@ class HomepageBannerPostgresTests {
 
     @Test
     void concurrentSavesWithSameVersionPublishOnce() throws Exception {
-        service.publish("\"0\"", new BannerUpdate(png("a.png"), "Alt", "Heading", "Description"));
+        service.publish("\"0\"", new BannerUpdate(png("a.png"), all("Heading")));
 
         ExecutorService pool = Executors.newFixedThreadPool(2);
         CountDownLatch start = new CountDownLatch(1);
@@ -147,7 +176,7 @@ class HomepageBannerPostgresTests {
             Callable<Integer> save = () -> {
                 start.await();
                 try {
-                    service.publish("\"1\"", new BannerUpdate(null, null, heading, null));
+                    service.publish("\"1\"", new BannerUpdate(null, List.of(text("en", heading))));
                     return 200;
                 } catch (CmsException ex) {
                     return ex.getStatus();
@@ -165,6 +194,14 @@ class HomepageBannerPostgresTests {
         statuses.sort(Integer::compare);
         assertEquals(List.of(200, 412), statuses);
         assertEquals(2L, service.getAdminBanner().revision());
+    }
+
+    private static List<BannerText> all(String heading) {
+        return List.of(text("km", heading + " km"), text("en", heading + " en"), text("zh", heading + " zh"));
+    }
+
+    private static BannerText text(String language, String heading) {
+        return new BannerText(language, heading, "Description " + language, heading);
     }
 
     private String onlyMediaKey() {
