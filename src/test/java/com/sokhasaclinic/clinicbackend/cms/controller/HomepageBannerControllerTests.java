@@ -19,6 +19,7 @@ import com.sokhasaclinic.clinicbackend.cms.dto.BannerDtos.PublicBanner;
 import com.sokhasaclinic.clinicbackend.cms.dto.BannerDtos.VersionedBanner;
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsException;
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsExceptionHandler;
+import com.sokhasaclinic.clinicbackend.cms.exception.StorageUnavailableException;
 import com.sokhasaclinic.clinicbackend.cms.service.HomepageBannerService;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -118,6 +119,17 @@ class HomepageBannerControllerTests {
         mvc.perform(multipart(HttpMethod.PATCH, ADMIN).part(text("heading", "New heading")))
                 .andExpect(status().isPreconditionRequired())
                 .andExpect(jsonPath("$.type").value("VERSION_REQUIRED"));
+    }
+
+    @Test
+    void storageFailureReturns503ProblemDetails() throws Exception {
+        when(service.publish(any(), any())).thenThrow(new StorageUnavailableException("Media storage is not configured."));
+
+        mvc.perform(multipart(HttpMethod.PATCH, ADMIN)
+                        .part(text("heading", "New heading"))
+                        .header("If-Match", "\"1\""))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.type").value("STORAGE_UNAVAILABLE"));
     }
 
     @Test
