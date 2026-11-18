@@ -724,3 +724,230 @@ As for admin service editing, plus:
 | Change only the `zh` alt text with `PUT` | `200`; image and other alt texts unchanged |
 | Send `imageAltText` with `PUT` for a service without an image | `400 VALIDATION_ERROR` |
 | Two admins upload from the same `ETag` | First `200`; second `412`; the second upload is discarded |
+
+## Appointment booking and reception — approved November 18, 2026
+
+> **Status:** Approved by the Team Lead on November 18, 2026, including decisions AP-01 to AP-16.
+> Covers endpoints 3–12 of the draft [MVP API scope](API-DOCUMENTATION.md#mvp-api-scope), resolves
+> open question 1 of [booking periods](#booking-periods-and-service-durations--approved-november-17-2026)
+> (AP-11), BD-06 (AP-02) and BD-14 (AP-01). Builds on the approved booking-period, capacity and
+> confirm rules (BK-01 to BK-08), which this section does not change.
+
+### Why
+
+The backend has the approved booking rules in its service layer: the appointment tables, the
+capacity lock, the confirm overlap constraint and the status transitions. This section is the HTTP
+contract that lets the patient booking form and the reception dashboard use them.
+
+### Approved decisions
+
+| ID | Decision | Answer |
+| --- | --- | --- |
+| AP-01 | Booking reference (BD-14) | Every request gets a unique, human-readable reference `SK-YYYYMMDD-NNNN`, for example `SK-20261120-0007`: the preferred date and a per-date counter. Shown to the patient and searchable by reception. |
+| AP-02 | Booking window (BD-06) | `preferredDate` from today to today + 60 days, in clinic time. Stored as a setting so the clinic can change it without a deploy. |
+| AP-03 | Duplicate submits | `POST /public/appointments` requires an `Idempotency-Key` header (a UUID from the form). A repeat with the same key and body returns the first response; the same key with a different body returns `409 IDEMPOTENCY_CONFLICT`. Keys are kept for 24 hours. |
+| AP-04 | Patient identity | Patients are matched by phone number, normalised to E.164 (`012 345 678` → `+85512345678`). Each appointment keeps the name and phone as submitted, so a later booking never changes an earlier one. |
+| AP-05 | Patient fields | `fullName` (1–120) and `phone` required; `email` optional (the current form collects it); `notes` optional, up to 500 characters; `language` required (`km`, `en`, `zh`) for later patient messages. |
+| AP-06 | Preferred doctor | Not in the MVP. Reception chooses the doctor when confirming (BK-02), so the public doctor list (draft endpoint 2) is not needed for launch. |
+| AP-07 | Who uses the admin routes | Keycloak `ADMIN` and `RECEPTION`, both with the same access to every route in this section. |
+| AP-08 | Concurrent staff edits | Detail responses carry a strong `ETag` (`"<version>"`). Every `PATCH` requires `If-Match`; a stale value returns `412 VERSION_MISMATCH`, a missing one `428 VERSION_REQUIRED`. Same as banner and service editing. |
+| AP-09 | Status history | Every status change writes one history row (who, when, from, to, reason) in the same transaction. Reception can read it per appointment. |
+| AP-10 | Capacity clarification | `ARRIVED`, `IN_PROGRESS` and `COMPLETED` keep counting against their period, like `CONFIRMED`. The approved rule names only `PENDING` and `CONFIRMED`, but also says only `REJECTED` frees minutes; without this, a period reopens as patients check in. |
+| AP-11 | Period availability before submit (open question 1) | Yes: `GET /public/booking-periods`, so the form can disable full periods instead of failing on submit with `409 PERIOD_FULL`. |
+| AP-12 | Rate limit | 5 booking requests per 10 minutes per client IP; more returns `429 RATE_LIMITED`. |
+| AP-13 | Not-found codes | Specific codes, as elsewhere in this contract: `APPOINTMENT_NOT_FOUND`, `SERVICE_NOT_FOUND`, `DOCTOR_NOT_FOUND`. |
+| AP-14 | Out of scope for the MVP | Patient cancellation (BD-07), no-show, rescheduling, undoing a step, reception-entered bookings and patient notifications. Each needs its own decision; cancellation and no-show would add statuses. |
+| AP-15 | Date range on the list | `from` and `to` (inclusive) on `GET /admin/appointments`, so the reception calendar loads a month or week in one request and the list's "Date range" filter works. |
+| AP-16 | Doctors for confirm | `GET /admin/doctors` returns the active doctors (`id`, `fullName`), so reception can pick one in the confirm dialog. Read-only; the doctor editor stays after the MVP. |
+
+### Routes
+
+| # | Method | Route | Access |
+| ---: | --- | --- | --- |
+| 1 | GET | /api/v1/public/booking-periods?date=&serviceId= | Public |
+| 2 | POST | /api/v1/public/appointments | Public, `Idempotency-Key` required |
+| 3 | GET | /api/v1/admin/appointments | ADMIN, RECEPTION |
+| 4 | GET | /api/v1/admin/appointments/{id} | ADMIN, RECEPTION |
+| 5 | GET | /api/v1/admin/appointments/{id}/history | ADMIN, RECEPTION |
+| 6 | PATCH | /api/v1/admin/appointments/{id}/confirm | ADMIN, RECEPTION, `If-Match` required |
+| 7 | PATCH | /api/v1/admin/appointments/{id}/reject | ADMIN, RECEPTION, `If-Match` required |
+| 8 | PATCH | /api/v1/admin/appointments/{id}/arrive | ADMIN, RECEPTION, `If-Match` required |
+| 9 | PATCH | /api/v1/admin/appointments/{id}/start | ADMIN, RECEPTION, `If-Match` required |
+| 10 | PATCH | /api/v1/admin/appointments/{id}/complete | ADMIN, RECEPTION, `If-Match` required |
+| 11 | GET | /api/v1/admin/dashboard/summary | ADMIN, RECEPTION |
+| 12 | GET | /api/v1/admin/doctors | ADMIN, RECEPTION |
+
+Admin responses use `Cache-Control: no-store`. Times in responses are ISO 8601 with the clinic
+offset, for example `2026-11-20T09:30:00+07:00` (BK-08).
+
+### `GET /api/v1/public/booking-periods?date=2026-11-20&serviceId=…`
+
+Both parameters are required. Returns each period with whether this service still fits:
+
+```json
+{
+  "data": [
+    { "code": "MORNING",   "startTime": "08:00", "endTime": "12:00", "available": true },
+    { "code": "AFTERNOON", "startTime": "13:30", "endTime": "17:00", "available": false }
+  ]
+}
+```
+
+`available` is a hint only; the booking request re-checks capacity under the lock. A date outside
+the booking window returns every period with `available: false`.
+
+### `POST /api/v1/public/appointments`
+
+```http
+POST /api/v1/public/appointments
+Idempotency-Key: 6f1c2a7e-0b5d-4b8e-9a51-3c0d2e7f9a10
+```
+
+```json
+{
+  "serviceId": "3f1c…",
+  "preferredDate": "2026-11-20",
+  "preferredPeriod": "MORNING",
+  "language": "km",
+  "patient": { "fullName": "Sok Dara", "phone": "012 345 678", "email": null },
+  "notes": "First visit"
+}
+```
+
+HTTP `201 Created`:
+
+```json
+{
+  "data": {
+    "id": "b2d4…",
+    "reference": "SK-20261120-0007",
+    "status": "PENDING",
+    "preferredDate": "2026-11-20",
+    "preferredPeriod": "MORNING"
+  }
+}
+```
+
+The response does not echo the patient's details.
+
+### `GET /api/v1/admin/appointments`
+
+| Parameter | Rule |
+| --- | --- |
+| `status` | Optional; one status |
+| `date` | Optional; matches the confirmed date, or the preferred date while `PENDING` |
+| `from`, `to` | Optional; an inclusive date range on the same date as `date` (AP-15). Not combined with `date`; at most 62 days |
+| `q` | Optional; reference, patient name or phone (any format) |
+| `page`, `size` | Default `0` and `20`; `size` up to `100` |
+
+Ordered oldest first by `createdAt`, so the longest-waiting request is at the top.
+
+```json
+{
+  "data": [
+    {
+      "id": "b2d4…",
+      "reference": "SK-20261120-0007",
+      "status": "PENDING",
+      "patientName": "Sok Dara",
+      "patientPhone": "+85512345678",
+      "serviceName": "Chronic Disease Management",
+      "preferredDate": "2026-11-20",
+      "preferredPeriod": "MORNING",
+      "doctorName": null,
+      "startAt": null,
+      "createdAt": "2026-11-18T10:05:00+07:00"
+    }
+  ],
+  "page": { "number": 0, "size": 20, "totalElements": 1, "totalPages": 1 }
+}
+```
+
+`serviceName` is in English, the staff language.
+
+### `GET /api/v1/admin/appointments/{id}`
+
+HTTP `200` with a strong `ETag`. The list fields plus `serviceId`, `patientEmail`, `language`,
+`notes`, `durationMinutes`, `bufferMinutes`, `doctorId`, `endAt` and `updatedAt`.
+
+### `GET /api/v1/admin/appointments/{id}/history`
+
+```json
+{
+  "data": [
+    { "fromStatus": null, "toStatus": "PENDING", "actorType": "GUEST", "actorName": null, "reason": null, "changedAt": "2026-11-18T10:05:00+07:00" },
+    { "fromStatus": "PENDING", "toStatus": "REJECTED", "actorType": "STAFF", "actorName": "Reception 1", "reason": "Fully booked", "changedAt": "2026-11-18T11:00:00+07:00" }
+  ]
+}
+```
+
+`actorName` is the staff member's Keycloak `name` (or `preferred_username`) at the time of the change.
+
+### Status changes
+
+| Route | From → to | Body |
+| --- | --- | --- |
+| `…/confirm` | `PENDING → CONFIRMED` | `{ "doctorId", "date", "startTime", "durationMinutes"? }`, as approved |
+| `…/reject` | `PENDING → REJECTED` | `{ "reason": "…" }`, required, 1–500 characters |
+| `…/arrive` | `CONFIRMED → ARRIVED` | None |
+| `…/start` | `ARRIVED → IN_PROGRESS` | None |
+| `…/complete` | `IN_PROGRESS → COMPLETED` | None |
+
+Each returns HTTP `200` with the detail body and the new `ETag`. Checks run in this order: the
+appointment exists (`404`), `If-Match` (`428` / `412`), the transition is allowed (`409
+INVALID_TRANSITION`), then the body.
+
+### `GET /api/v1/admin/dashboard/summary`
+
+```json
+{ "data": { "pending": 4, "today": { "CONFIRMED": 6, "ARRIVED": 1, "IN_PROGRESS": 1, "COMPLETED": 3 } } }
+```
+
+`today` is the current clinic date.
+
+### `GET /api/v1/admin/doctors`
+
+```json
+{ "data": [ { "id": "9a7e…", "fullName": "Dr. Sok Vanna" } ] }
+```
+
+Active doctors only, in display order.
+
+### Errors
+
+Problem-details body as for the banner (`type`, `title`, `status`, `detail`, `instance`,
+`timestamp`, `errors`).
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Missing or invalid fields, date outside the booking window, unknown period, invalid phone, confirm outside one period, reject without a reason |
+| 404 | `APPOINTMENT_NOT_FOUND` | Unknown or malformed appointment `{id}` |
+| 404 | `SERVICE_NOT_FOUND` | Unknown or inactive service |
+| 404 | `DOCTOR_NOT_FOUND` | Unknown or inactive doctor on confirm |
+| 409 | `PERIOD_FULL` | Approved; no capacity left in the date and period |
+| 409 | `DOCTOR_UNAVAILABLE` | Approved; overlapping appointment for the doctor |
+| 409 | `INVALID_TRANSITION` | The step is not allowed from the current status |
+| 409 | `IDEMPOTENCY_CONFLICT` | `Idempotency-Key` reused with a different body |
+| 412 | `VERSION_MISMATCH` | `If-Match` is not the current version |
+| 428 | `VERSION_REQUIRED` | `If-Match` is missing |
+| 428 | `IDEMPOTENCY_KEY_REQUIRED` | `Idempotency-Key` is missing on booking |
+| 429 | `RATE_LIMITED` | Too many booking requests from one client |
+
+### Acceptance cases
+
+The approved booking-period acceptance cases still apply. In addition:
+
+| Scenario | Expected result |
+| --- | --- |
+| Book with a new `Idempotency-Key` | `201`, `PENDING`, a new `reference` |
+| Submit the same request twice with the same key | Second returns the same `201` body; one appointment exists |
+| Same key, different body | `409 IDEMPOTENCY_CONFLICT` |
+| Book 61 days ahead or yesterday | `400 VALIDATION_ERROR` on `preferredDate` |
+| Book twice with `012 345 678` and `+855 12 345 678` | One patient; each appointment keeps its own submitted name |
+| `RECEPTION` lists pending requests | `200`, oldest first |
+| A guest calls an admin route | `401` |
+| A full period on the booking form | `GET /public/booking-periods` shows it `available: false` |
+| Two receptionists act on one request from the same `ETag` | First `200`; second `412` |
+| `arrive` on a `PENDING` request | `409 INVALID_TRANSITION` |
+| Full visit: confirm, arrive, start, complete | Each `200`; history has five rows in order |
+| Sixth booking from one IP within 10 minutes | `429 RATE_LIMITED` |

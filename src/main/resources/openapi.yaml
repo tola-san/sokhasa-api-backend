@@ -464,8 +464,423 @@ paths:
         '428':
           description: If-Match header is missing (VERSION_REQUIRED)
 
+  /public/booking-periods:
+    get:
+      tags:
+        - Public Booking
+      operationId: getBookingPeriods
+      summary: Periods on a date and whether a service still fits (AP-11)
+      description: |
+        A hint for the booking form; the booking request checks capacity again under a lock. A date
+        outside the booking window returns every period with available false.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+            example: '2026-11-20'
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Each period with its hours and availability
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BookingPeriodAvailability'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+
+  /public/appointments:
+    post:
+      tags:
+        - Public Booking
+      operationId: createAppointment
+      summary: Submit a booking request; starts as PENDING
+      description: |
+        Requires an Idempotency-Key (AP-03): the same key and body return the first response; the
+        same key with a different body returns 409 IDEMPOTENCY_CONFLICT. The period must have
+        capacity left (409 PERIOD_FULL). At most 5 requests per client per 10 minutes (AP-12).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BookingRequest'
+      responses:
+        '201':
+          description: The request was created, or this key's first request is returned again
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BookingConfirmation'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          description: Unknown or inactive service (SERVICE_NOT_FOUND)
+        '409':
+          description: PERIOD_FULL or IDEMPOTENCY_CONFLICT
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '428':
+          description: Idempotency-Key is missing (IDEMPOTENCY_KEY_REQUIRED)
+        '429':
+          description: Too many booking requests from this client (RATE_LIMITED)
+
+  /admin/appointments:
+    get:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: listAppointments
+      summary: List, filter and search appointments, oldest request first
+      parameters:
+        - name: status
+          in: query
+          schema:
+            $ref: '#/components/schemas/AppointmentStatus'
+        - name: date
+          in: query
+          description: The confirmed date, or the preferred date until confirmed. Not combined with from and to.
+          schema:
+            type: string
+            format: date
+        - name: from
+          in: query
+          description: Start of an inclusive range on the same date (AP-15). Needs to; at most 62 days.
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: q
+          in: query
+          description: Reference, patient name or phone number in any format.
+          schema:
+            type: string
+            maxLength: 100
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: size
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: One page of appointments
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AppointmentListItem'
+                  page:
+                    $ref: '#/components/schemas/PageInfo'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller has neither the ADMIN nor the RECEPTION role
+
+  /admin/appointments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: getAppointment
+      summary: One appointment and its strong ETag
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller has neither the ADMIN nor the RECEPTION role
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+
+  /admin/appointments/{id}/history:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    get:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: getAppointmentHistory
+      summary: Status changes, oldest first
+      responses:
+        '200':
+          description: Who changed the status, when, from, to and why
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StatusChange'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+
+  /admin/appointments/{id}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    patch:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: confirmAppointment
+      summary: PENDING → CONFIRMED with doctor and exact time
+      description: |
+        The appointment, buffer included, must fit inside one period (400 on startTime). A doctor
+        cannot have overlapping active appointments (409 DOCTOR_UNAVAILABLE). Checks run in order:
+        404, If-Match (428, 412), transition (409 INVALID_TRANSITION), then the body.
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          description: APPOINTMENT_NOT_FOUND or DOCTOR_NOT_FOUND
+        '409':
+          description: INVALID_TRANSITION or DOCTOR_UNAVAILABLE
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match is missing (VERSION_REQUIRED)
+
+  /admin/appointments/{id}/reject:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    patch:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: rejectAppointment
+      summary: PENDING → REJECTED with a reason
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RejectRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+        '409':
+          description: INVALID_TRANSITION
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/appointments/{id}/arrive:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    patch:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: arriveAppointment
+      summary: CONFIRMED → ARRIVED
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+        '409':
+          description: INVALID_TRANSITION
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/appointments/{id}/start:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    patch:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: startAppointment
+      summary: ARRIVED → IN_PROGRESS
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+        '409':
+          description: INVALID_TRANSITION
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/appointments/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/AppointmentId'
+    patch:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: completeAppointment
+      summary: IN_PROGRESS → COMPLETED
+      parameters:
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AppointmentSaved'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+        '409':
+          description: INVALID_TRANSITION
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/dashboard/summary:
+    get:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: getDashboardSummary
+      summary: Pending requests and today's appointments by status
+      responses:
+        '200':
+          description: Counts; today is the current clinic date
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      pending:
+                        type: integer
+                        example: 4
+                      today:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                        example:
+                          CONFIRMED: 6
+                          COMPLETED: 3
+
+  /admin/doctors:
+    get:
+      tags:
+        - Reception
+      security:
+        - BearerAuth: []
+      operationId: listDoctors
+      summary: Active doctors for the confirm dialog (AP-16)
+      responses:
+        '200':
+          description: Active doctors in display order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: string
+                          format: uuid
+                        fullName:
+                          type: string
+
 components:
   parameters:
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    AppointmentIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag from the latest GET or change response.
+      schema:
+        type: string
+        example: '"2"'
     ServiceId:
       name: id
       in: path
@@ -490,6 +905,33 @@ components:
         example: '"3"'
 
   responses:
+    AppointmentSaved:
+      description: The appointment and its strong ETag
+      headers:
+        ETag:
+          description: Strong version tag to send in If-Match.
+          schema:
+            type: string
+            example: '"2"'
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              data:
+                $ref: '#/components/schemas/AppointmentDetail'
+    AppointmentProblem:
+      description: Not found (APPOINTMENT_NOT_FOUND or SERVICE_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    AppointmentValidationError:
+      description: Missing or invalid fields (VALIDATION_ERROR); errors[].field names each one
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
     AdminServiceSaved:
       description: Saved service and its new ETag
       headers:
@@ -863,3 +1305,200 @@ components:
                 example: translations
               languageCode:
                 $ref: '#/components/schemas/LanguageCode'
+
+    AppointmentStatus:
+      type: string
+      enum: [PENDING, CONFIRMED, REJECTED, ARRIVED, IN_PROGRESS, COMPLETED]
+
+    BookingPeriodAvailability:
+      type: object
+      required: [code, startTime, endTime, available]
+      properties:
+        code:
+          type: string
+          example: MORNING
+        startTime:
+          type: string
+          example: '08:00'
+        endTime:
+          type: string
+          example: '12:00'
+        available:
+          type: boolean
+
+    BookingRequest:
+      type: object
+      required: [serviceId, preferredDate, preferredPeriod, language, patient]
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+        preferredDate:
+          type: string
+          format: date
+          description: Today to today + 60 days in clinic time (AP-02).
+        preferredPeriod:
+          type: string
+          example: MORNING
+        language:
+          $ref: '#/components/schemas/LanguageCode'
+        patient:
+          type: object
+          required: [fullName, phone]
+          properties:
+            fullName:
+              type: string
+              maxLength: 120
+              example: Sok Dara
+            phone:
+              type: string
+              description: Any common format; stored as E.164 (AP-04).
+              example: 012 345 678
+            email:
+              type: [string, 'null']
+              maxLength: 254
+        notes:
+          type: [string, 'null']
+          maxLength: 500
+
+    BookingConfirmation:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          example: SK-20261120-0007
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        preferredDate:
+          type: string
+          format: date
+        preferredPeriod:
+          type: string
+          example: MORNING
+
+    AppointmentListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          example: SK-20261120-0007
+        status:
+          $ref: '#/components/schemas/AppointmentStatus'
+        patientName:
+          type: string
+        patientPhone:
+          type: string
+          example: '+85512345678'
+        serviceName:
+          type: string
+          description: In English, the staff language.
+        preferredDate:
+          type: string
+          format: date
+        preferredPeriod:
+          type: string
+        doctorName:
+          type: [string, 'null']
+        startAt:
+          type: [string, 'null']
+          format: date-time
+          example: '2026-11-20T09:30:00+07:00'
+        createdAt:
+          type: string
+          format: date-time
+
+    AppointmentDetail:
+      allOf:
+        - $ref: '#/components/schemas/AppointmentListItem'
+        - type: object
+          properties:
+            serviceId:
+              type: string
+              format: uuid
+            patientEmail:
+              type: [string, 'null']
+            language:
+              $ref: '#/components/schemas/LanguageCode'
+            notes:
+              type: [string, 'null']
+            durationMinutes:
+              type: integer
+            bufferMinutes:
+              type: integer
+            doctorId:
+              type: [string, 'null']
+              format: uuid
+            endAt:
+              type: [string, 'null']
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    PageInfo:
+      type: object
+      properties:
+        number:
+          type: integer
+        size:
+          type: integer
+        totalElements:
+          type: integer
+        totalPages:
+          type: integer
+
+    StatusChange:
+      type: object
+      properties:
+        fromStatus:
+          oneOf:
+            - $ref: '#/components/schemas/AppointmentStatus'
+            - type: 'null'
+        toStatus:
+          $ref: '#/components/schemas/AppointmentStatus'
+        actorType:
+          type: string
+          enum: [GUEST, STAFF]
+        actorName:
+          type: [string, 'null']
+        reason:
+          type: [string, 'null']
+        changedAt:
+          type: string
+          format: date-time
+
+    ConfirmRequest:
+      type: object
+      required: [doctorId, date, startTime]
+      properties:
+        doctorId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          description: Local clinic date; may differ from the patient's preference.
+        startTime:
+          type: string
+          example: '09:30'
+          description: Local clinic time.
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+          description: Defaults to the duration copied from the service (BK-06).
+
+    RejectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
