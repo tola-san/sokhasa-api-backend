@@ -69,6 +69,18 @@ class CmsAdminSecurityTests {
     }
 
     @Test
+    void receptionistCannotViewOrEditServices() throws Exception {
+        // Admin service routes are ADMIN only, including reads (decisions SA-01 and SA-09).
+        String service = "/api/v1/admin/services/3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d01";
+        mvc.perform(get("/api/v1/admin/services").header("Authorization", "Bearer receptionist"))
+                .andExpect(status().isForbidden());
+        mvc.perform(get(service).header("Authorization", "Bearer receptionist"))
+                .andExpect(status().isForbidden());
+        mvc.perform(patch(service + "/deactivate").header("Authorization", "Bearer receptionist"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void adminCanPassSecurityFilter() throws Exception {
         mvc.perform(get(BANNER).header("Authorization", "Bearer administrator"))
                 .andExpect(status().isNotFound());

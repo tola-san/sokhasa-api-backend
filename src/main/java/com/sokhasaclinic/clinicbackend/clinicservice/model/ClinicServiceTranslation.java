@@ -5,6 +5,8 @@ import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import com.sokhasaclinic.clinicbackend.common.i18n.Language;
+import java.util.UUID;
 import lombok.Getter;
 
 /** Service card text in one language. */
@@ -28,5 +30,16 @@ public class ClinicServiceTranslation {
     private String imageAltText;
 
     protected ClinicServiceTranslation() {
+    }
+
+    public ClinicServiceTranslation(UUID serviceId, Language language, String name, String shortDescription) {
+        this.id = new TranslationId(serviceId, language.code());
+        update(name, shortDescription);
+    }
+
+    /** Callers trim and validate the values first. The image alt text is not edited in phase 1. */
+    public void update(String newName, String newShortDescription) {
+        name = newName;
+        shortDescription = newShortDescription;
     }
 }

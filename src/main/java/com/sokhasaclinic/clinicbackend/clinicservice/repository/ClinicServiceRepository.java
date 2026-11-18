@@ -2,9 +2,12 @@ package com.sokhasaclinic.clinicbackend.clinicservice.repository;
 
 import com.sokhasaclinic.clinicbackend.clinicservice.model.ClinicService;
 import com.sokhasaclinic.clinicbackend.clinicservice.model.ServiceStatus;
+import jakarta.persistence.LockModeType;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -32,4 +35,22 @@ public interface ClinicServiceRepository extends JpaRepository<ClinicService, UU
     List<PublicServiceRow> findPublicRows(
             @Param("status") ServiceStatus status,
             @Param("languageCode") String languageCode);
+
+    /** Every service, active or not, in public list order, with its category loaded. */
+    @Query("""
+            select s from ClinicService s join fetch s.category c
+            order by c.sortOrder, s.sortOrder, s.slug
+            """)
+    List<ClinicService> findAllForAdmin();
+
+    @Query("select s from ClinicService s join fetch s.category where s.id = :id")
+    Optional<ClinicService> findForAdmin(@Param("id") UUID id);
+
+    /**
+     * Locks the row for an edit, so the version check and the save see the same row and two
+     * admins saving at once are serialised: the second then fails the version check (412).
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select s from ClinicService s join fetch s.category where s.id = :id")
+    Optional<ClinicService> findForUpdate(@Param("id") UUID id);
 }

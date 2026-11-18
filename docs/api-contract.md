@@ -498,3 +498,159 @@ Errors use the CMS problem-details body. See [OpenAPI specification](openapi.yam
 | SV-08 | Category filter? | None. The booking form groups by `categorySlug` on the client. |
 | SV-09 | Detail-page fields (overview, FAQs, procedure) | Stay as bundled website content. The API covers card and booking data only. |
 | SV-10 | Seeded images | Not seeded. Seeded services have `imageUrl: null` and `imageAltText: null`; the website keeps its own images by `slug` until the service editor uploads them to R2. |
+
+## Admin service editing (phase 1) — approved November 18, 2026
+
+> **Status:** Approved by the Team Lead on November 18, 2026, including decisions SA-01 to SA-10. Phase 1 of
+> [Service Management APIs](API-DOCUMENTATION.md#8-service-management-apis): staff edit the
+> seeded services. Creating and deleting services, image upload and category management are
+> phase 2 and stay **After MVP**. Follows the [multilingual banner](#multilingual-homepage-banner--approved-november-17-2026)
+> conventions for translations, ETags and errors.
+
+### Why
+
+The six seeded services carry the website's placeholder prices and durations (SV-01). The clinic
+needs to correct them, and the wording in each language, without a deploy. Durations and buffers
+also drive booking capacity (BK-05), so reception needs them to be right before launch.
+
+### Proposed decisions
+
+| ID | Decision | Proposal |
+| --- | --- | --- |
+| SA-01 | Who can edit services? | Keycloak `ADMIN` only. `RECEPTION` gets `403`. Matches the booking periods open question 3. |
+| SA-02 | What can be edited? | Text in each language, `durationMinutes`, `bufferMinutes`, `priceUsd`, `originalPriceUsd`, `sortOrder`, and `status` through activate / deactivate. |
+| SA-03 | What cannot be edited in phase 1? | `slug` and category. The website matches images and detail content to services by `slug` (SV-09, SV-10), so changing it would break them. Images are phase 2. |
+| SA-04 | Concurrent edits | Optimistic locking on `service.version`, sent as a strong `ETag` (`"<version>"`). Every write requires `If-Match`, as for the banner. |
+| SA-05 | Partial translations | Languages not sent keep their saved text, so an admin can fix one language without resending the others. |
+| SA-06 | Missing languages | An `ACTIVE` service must have all three languages (I18N-01). A write that would leave an active service without one, or an activation of a service missing one, returns `409 TRANSLATION_MISSING` and saves nothing. |
+| SA-07 | Effect on existing bookings | None. Appointments copy duration and buffer when created (BK-07). |
+| SA-08 | Deactivating a service | Allowed at any time. It disappears from the public list and booking form immediately; existing appointments keep it (`ON DELETE RESTRICT`). |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/admin/services | Keycloak ADMIN role |
+| GET | /api/v1/admin/services/{id} | Keycloak ADMIN role |
+| PUT | /api/v1/admin/services/{id} | Keycloak ADMIN role, `If-Match` required |
+| PATCH | /api/v1/admin/services/{id}/activate | Keycloak ADMIN role, `If-Match` required |
+| PATCH | /api/v1/admin/services/{id}/deactivate | Keycloak ADMIN role, `If-Match` required |
+
+All responses use `Cache-Control: no-store`. An unknown or malformed `{id}` returns
+`404 SERVICE_NOT_FOUND`.
+
+### Admin service body
+
+`GET /api/v1/admin/services/{id}` returns HTTP `200` with `ETag: "<version>"` and:
+
+```json
+{
+  "data": {
+    "id": "e105d306-5252-4b58-ac95-0b1308887001",
+    "slug": "chronic-disease-management",
+    "categorySlug": "general-internal-medicine",
+    "categoryName": "General & Internal Medicine",
+    "status": "ACTIVE",
+    "durationMinutes": 30,
+    "bufferMinutes": 0,
+    "priceUsd": 35.00,
+    "originalPriceUsd": null,
+    "sortOrder": 1,
+    "imageUrl": null,
+    "updatedAt": "2026-11-18T06:49:50Z",
+    "version": 0,
+    "translations": [
+      { "languageCode": "km", "name": "ការគ្រប់គ្រងជំងឺរ៉ាំរ៉ៃ និងវេជ្ជសាស្ត្រទូទៅ", "shortDescription": "…", "imageAltText": null },
+      { "languageCode": "en", "name": "Chronic Disease Management & Internal Care", "shortDescription": "…", "imageAltText": null },
+      { "languageCode": "zh", "name": "慢性病综合防治与内科长程管理", "shortDescription": "…", "imageAltText": null }
+    ],
+    "missingLanguages": []
+  }
+}
+```
+
+- `categoryName` is the English name, for the dashboard.
+- `translations` is ordered `km`, `en`, `zh` and contains only saved languages; `missingLanguages`
+  lists the others in the same order.
+- `version` equals the `ETag` value without quotes, so the list can be edited without an extra GET.
+- Every field is present; optional values are `null`.
+
+### `GET /api/v1/admin/services`
+
+HTTP `200` with `{ "data": [ <admin service body>, … ] }`: every service, active and inactive,
+ordered as the public list (category `sortOrder`, service `sortOrder`, `slug`). No paging (SV-04).
+
+### `PUT /api/v1/admin/services/{id}`
+
+`application/json`, `If-Match` required. All scalar fields are required; `translations` is
+optional.
+
+```json
+{
+  "durationMinutes": 45,
+  "bufferMinutes": 10,
+  "priceUsd": 40.00,
+  "originalPriceUsd": null,
+  "sortOrder": 1,
+  "translations": [
+    { "languageCode": "en", "name": "Chronic Disease Management & Internal Care", "shortDescription": "Targeted protocols for hypertension and diabetes." }
+  ]
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `durationMinutes` | Integer, 5–480 |
+| `bufferMinutes` | Integer, 0–60 |
+| `priceUsd` | Number with at most two decimal places, `≥ 0`, or `null` ("ask the clinic") |
+| `originalPriceUsd` | `null`, or greater than `priceUsd`; requires `priceUsd` |
+| `sortOrder` | Integer, 0–9999 |
+| `translations` | 0–3 items; each `languageCode` at most once and one of `km`, `en`, `zh` |
+| `name` | Trimmed, 1–120 characters |
+| `shortDescription` | Trimmed, 1–300 characters |
+| `imageAltText` | Must be absent or `null` in phase 1, because services have no image yet |
+
+Languages not sent keep their saved text (SA-05). Returns HTTP `200` with the admin service body
+and the new `ETag`.
+
+### `PATCH /api/v1/admin/services/{id}/activate` and `/deactivate`
+
+No body; `If-Match` required. Returns HTTP `200` with the admin service body and the new `ETag`.
+Activating an active service, or deactivating an inactive one, changes nothing and returns the
+current body and `ETag`.
+
+### Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Invalid field, duplicate or unknown `languageCode`, malformed JSON, `imageAltText` sent |
+| 401 | — | Missing or invalid bearer token |
+| 403 | — | Caller lacks the `ADMIN` role |
+| 404 | `SERVICE_NOT_FOUND` | Unknown or malformed `{id}` |
+| 409 | `TRANSLATION_MISSING` | An active service would be missing a language, or activation of a service missing one. `errors` lists each code as `{ "field": "translations", "languageCode": "zh" }` |
+| 412 | `VERSION_MISMATCH` | `If-Match` is not the current version |
+| 428 | `VERSION_REQUIRED` | `If-Match` is missing |
+
+Errors use the CMS problem-details body.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Admin changes a price from 35 to 40 | `200`; new `ETag`; public list shows `40.00` |
+| Admin fixes only the `zh` name | `200`; `km` and `en` unchanged |
+| Two admins save from the same `ETag` | First `200`; second `412 VERSION_MISMATCH` |
+| `PUT` without `If-Match` | `428 VERSION_REQUIRED` |
+| `originalPriceUsd` equal to `priceUsd` | `400 VALIDATION_ERROR` |
+| `durationMinutes: 500` | `400 VALIDATION_ERROR` |
+| Deactivate a service | `200`; it disappears from `GET /public/services` |
+| Activate a service missing `zh` | `409 TRANSLATION_MISSING`; still `INACTIVE` |
+| `RECEPTION` user calls any route | `403` |
+| Change a duration that existing appointments use | `200`; existing appointments keep their copied duration |
+
+### Resolved questions
+
+| ID | Question | Decision |
+| --- | --- | --- |
+| SA-09 | Can `RECEPTION` view services in the dashboard? | No. All admin service routes are `ADMIN` only. |
+| SA-10 | Audit history of price changes? | Not in phase 1. Only `updatedAt` is kept. |

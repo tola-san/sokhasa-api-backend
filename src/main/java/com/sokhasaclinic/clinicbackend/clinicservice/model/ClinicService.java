@@ -71,4 +71,29 @@ public class ClinicService {
 
     protected ClinicService() {
     }
+
+    /**
+     * Saves the editable fields (decision SA-02). Callers validate the values first. Always moves
+     * {@code updatedAt}, so the row is dirty and {@code version} increases even when only the
+     * translations changed.
+     */
+    public void updateDetails(int newDurationMinutes, int newBufferMinutes, BigDecimal newPriceUsd,
+            BigDecimal newOriginalPriceUsd, int newSortOrder, Instant now) {
+        durationMinutes = newDurationMinutes;
+        bufferMinutes = newBufferMinutes;
+        priceUsd = newPriceUsd;
+        originalPriceUsd = newOriginalPriceUsd;
+        sortOrder = newSortOrder;
+        updatedAt = now;
+    }
+
+    /** Returns false, and changes nothing, when the service already has {@code newStatus}. */
+    public boolean changeStatus(ServiceStatus newStatus, Instant now) {
+        if (status == newStatus) {
+            return false;
+        }
+        status = newStatus;
+        updatedAt = now;
+        return true;
+    }
 }
