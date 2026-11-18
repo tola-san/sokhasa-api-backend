@@ -22,9 +22,13 @@ import org.springframework.web.multipart.support.MissingServletRequestPartExcept
 import software.amazon.awssdk.core.exception.SdkException;
 
 /**
- * Centralized exception handler for CMS controllers providing RFC 7807 problem details.
+ * Centralized exception handler for CMS and public content controllers providing RFC 7807
+ * problem details.
  */
-@RestControllerAdvice(basePackages = "com.sokhasaclinic.clinicbackend.cms.controller")
+@RestControllerAdvice(basePackages = {
+        "com.sokhasaclinic.clinicbackend.cms.controller",
+        "com.sokhasaclinic.clinicbackend.clinicservice.controller"
+})
 public class CmsExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(CmsExceptionHandler.class);

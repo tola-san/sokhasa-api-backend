@@ -68,13 +68,29 @@ public class CmsException extends RuntimeException {
 
     /** A required language would be missing after the request. Lists each missing code. */
     public static CmsException translationMissing(Collection<Language> missing) {
+        return translationMissing(missing, "Add the banner text in every language before publishing.");
+    }
+
+    /** An active service would be missing a language (decision SA-06). */
+    public static CmsException serviceTranslationMissing(Collection<Language> missing) {
+        return translationMissing(missing, "An active service needs its name and description in every language.");
+    }
+
+    private static CmsException translationMissing(Collection<Language> missing, String message) {
         List<String> codes = missing.stream().map(Language::code).toList();
         List<Map<String, Object>> errors = codes.stream()
                 .<Map<String, Object>>map(code -> Map.of("field", "translations", "languageCode", code))
                 .toList();
         return new CmsException(409, "TRANSLATION_MISSING",
-                "Add the banner text in every language before publishing. Missing: "
-                        + String.join(", ", codes) + ".",
+                message + " Missing: " + String.join(", ", codes) + ".",
                 errors);
+    }
+
+    public static CmsException serviceNotFound() {
+        return new CmsException(404, "SERVICE_NOT_FOUND", "Service not found.");
+    }
+
+    public static CmsException serviceVersionMismatch() {
+        return new CmsException(412, "VERSION_MISMATCH", "Reload the service before saving.");
     }
 }
