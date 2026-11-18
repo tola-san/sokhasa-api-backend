@@ -202,6 +202,41 @@ paths:
             Nothing published yet, or no text in the requested language (BANNER_NOT_FOUND); use the
             bundled first slide
 
+  /public/services:
+    get:
+      tags:
+        - Public Services
+      operationId: listPublicServices
+      summary: List active bookable services in one language
+      description: |
+        Approved November 18, 2026. Returns every ACTIVE service, ordered by category sortOrder, service sortOrder, then slug.
+        No paging and no fallback to another language. imageUrl is a signed Cloudflare R2 URL that
+        expires after five minutes, so responses are sent with Cache-Control no-store.
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: Active services in the requested language; an empty array when there are none
+          headers:
+            Content-Language:
+              description: The language served, equal to lang.
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicServiceListWrapper'
+        '400':
+          description: lang is missing or not km, en or zh (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -294,6 +329,80 @@ components:
       properties:
         data:
           $ref: '#/components/schemas/PublicBanner'
+
+    PublicService:
+      type: object
+      required:
+        - id
+        - slug
+        - categorySlug
+        - categoryName
+        - name
+        - shortDescription
+        - durationMinutes
+        - priceUsd
+        - originalPriceUsd
+        - imageUrl
+        - imageAltText
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Send as serviceId when booking.
+        slug:
+          type: string
+          example: colonoscopy
+        categorySlug:
+          type: string
+          example: digestive-health
+        categoryName:
+          type: string
+          example: Digestive Health
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Colonoscopy
+        shortDescription:
+          type: string
+          minLength: 1
+          maxLength: 300
+          example: Camera examination of the large intestine.
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+          example: 60
+        priceUsd:
+          type: [number, 'null']
+          minimum: 0
+          multipleOf: 0.01
+          description: US dollars. Null means ask the clinic for the price.
+          example: 450.00
+        originalPriceUsd:
+          type: [number, 'null']
+          multipleOf: 0.01
+          description: Price before a promotion. Only set when priceUsd is set, and greater than it.
+          example: null
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+          description: Signed URL valid for five minutes. Null when the service has no image.
+        imageAltText:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 200
+          description: Null exactly when imageUrl is null.
+          example: Colonoscopy package poster
+
+    PublicServiceListWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicService'
 
     ProblemDetails:
       type: object
