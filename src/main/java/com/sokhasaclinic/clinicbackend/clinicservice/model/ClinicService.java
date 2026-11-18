@@ -87,6 +87,12 @@ public class ClinicService {
         updatedAt = now;
     }
 
+    /** Points the service at a new image, or at none with {@code null} (decisions SI-03 and SI-05). */
+    public void changeImage(UUID newImageMediaId, Instant now) {
+        imageMediaId = newImageMediaId;
+        updatedAt = now;
+    }
+
     /** Returns false, and changes nothing, when the service already has {@code newStatus}. */
     public boolean changeStatus(ServiceStatus newStatus, Instant now) {
         if (status == newStatus) {

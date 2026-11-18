@@ -379,6 +379,91 @@ paths:
         '428':
           description: If-Match header is missing (VERSION_REQUIRED)
 
+  /admin/services/{id}/image:
+    parameters:
+      - $ref: '#/components/parameters/ServiceId'
+    put:
+      tags:
+        - Admin Services
+      security:
+        - BearerAuth: []
+      operationId: putAdminServiceImage
+      summary: Set or replace a service image with alt text in every language
+      description: |
+        Approved November 18, 2026 (SI-01 to SI-07). The service needs its name and description in
+        km, en and zh first. The new image is live only after the upload and the database update
+        both succeed; a replaced image is deleted from storage afterwards.
+      parameters:
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image, altTexts]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG, or WebP up to 5 MiB and 40 million pixels.
+                altTexts:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  description: Sent as an application/json part. One entry per km, en and zh.
+                  items:
+                    $ref: '#/components/schemas/ServiceImageAltText'
+            encoding:
+              altTexts:
+                contentType: application/json
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminServiceSaved'
+        '400':
+          $ref: '#/components/responses/ServiceValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/ServiceNotFound'
+        '409':
+          $ref: '#/components/responses/ServiceTranslationMissing'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '413':
+          description: Image exceeds 5 MiB (IMAGE_TOO_LARGE)
+        '415':
+          description: Image is not JPEG, PNG, or WebP (UNSUPPORTED_IMAGE)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+        '503':
+          description: Media storage unavailable (STORAGE_UNAVAILABLE)
+    delete:
+      tags:
+        - Admin Services
+      security:
+        - BearerAuth: []
+      operationId: deleteAdminServiceImage
+      summary: Remove a service image and its alt text
+      description: The website falls back to its bundled picture. Deleting when there is no image changes nothing.
+      parameters:
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminServiceSaved'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/ServiceNotFound'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
 components:
   parameters:
     ServiceId:
@@ -619,7 +704,21 @@ components:
           maxLength: 300
         imageAltText:
           type: [string, 'null']
-          description: Response only in phase 1 (always null). Must be absent or null in requests.
+          maxLength: 200
+          description: |
+            Alt text of the service image in this language (SI-06). In PUT requests, absent or null
+            keeps the saved value; a value is only allowed when the service has an image.
+
+    ServiceImageAltText:
+      type: object
+      required: [languageCode, imageAltText]
+      properties:
+        languageCode:
+          $ref: '#/components/schemas/LanguageCode'
+        imageAltText:
+          type: string
+          minLength: 1
+          maxLength: 200
 
     AdminService:
       type: object

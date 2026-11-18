@@ -3,6 +3,7 @@ package com.sokhasaclinic.clinicbackend.clinicservice.service;
 import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.AdminService;
 import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.AdminServiceText;
 import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.AdminServiceUpdate;
+import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.ServiceImageAltText;
 import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.VersionedService;
 import com.sokhasaclinic.clinicbackend.clinicservice.model.ClinicService;
 import com.sokhasaclinic.clinicbackend.clinicservice.model.ClinicServiceTranslation;
@@ -14,6 +15,8 @@ import com.sokhasaclinic.clinicbackend.clinicservice.repository.ServiceCategoryT
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsException;
 import com.sokhasaclinic.clinicbackend.cms.model.CmsMedia;
 import com.sokhasaclinic.clinicbackend.cms.repository.MediaRepository;
+import com.sokhasaclinic.clinicbackend.cms.service.MediaCleanupService;
+import com.sokhasaclinic.clinicbackend.cms.service.MediaService;
 import com.sokhasaclinic.clinicbackend.cms.service.storage.MediaStorage;
 import com.sokhasaclinic.clinicbackend.common.i18n.Language;
 import java.math.BigDecimal;
@@ -33,11 +36,13 @@ import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 /**
  * Admin editing of the seeded services (phase 1, approved November 18, 2026, decisions SA-01 to
- * SA-10): text in each language, duration, buffer, prices, order and active status. Slug, category
- * and image are not edited here (SA-03).
+ * SA-10): text in each language, duration, buffer, prices, order and active status. Images and their
+ * alt text follow the service image decisions (SI-01 to SI-07). Slug and category are not edited (SA-03).
  */
 @Service
 public class ServiceAdminService {
@@ -45,12 +50,16 @@ public class ServiceAdminService {
     private static final Pattern ETAG = Pattern.compile("\"(0|[1-9][0-9]{0,17})\"");
     private static final int NAME_MAX = 120;
     private static final int DESCRIPTION_MAX = 300;
+    private static final int ALT_TEXT_MAX = 200;
 
     private final ClinicServiceRepository serviceRepository;
     private final ClinicServiceTranslationRepository translationRepository;
     private final ServiceCategoryTranslationRepository categoryTranslationRepository;
     private final MediaRepository mediaRepository;
     private final MediaStorage mediaStorage;
+    private final MediaService mediaService;
+    private final MediaCleanupService mediaCleanupService;
+    private final TransactionTemplate transactionTemplate;
     private final Clock clock;
 
     @Autowired
@@ -59,9 +68,12 @@ public class ServiceAdminService {
             ClinicServiceTranslationRepository translationRepository,
             ServiceCategoryTranslationRepository categoryTranslationRepository,
             MediaRepository mediaRepository,
-            MediaStorage mediaStorage) {
+            MediaStorage mediaStorage,
+            MediaService mediaService,
+            MediaCleanupService mediaCleanupService,
+            TransactionTemplate transactionTemplate) {
         this(serviceRepository, translationRepository, categoryTranslationRepository, mediaRepository,
-                mediaStorage, Clock.systemUTC());
+                mediaStorage, mediaService, mediaCleanupService, transactionTemplate, Clock.systemUTC());
     }
 
     ServiceAdminService(
@@ -70,12 +82,18 @@ public class ServiceAdminService {
             ServiceCategoryTranslationRepository categoryTranslationRepository,
             MediaRepository mediaRepository,
             MediaStorage mediaStorage,
+            MediaService mediaService,
+            MediaCleanupService mediaCleanupService,
+            TransactionTemplate transactionTemplate,
             Clock clock) {
         this.serviceRepository = serviceRepository;
         this.translationRepository = translationRepository;
         this.categoryTranslationRepository = categoryTranslationRepository;
         this.mediaRepository = mediaRepository;
         this.mediaStorage = mediaStorage;
+        this.mediaService = mediaService;
+        this.mediaCleanupService = mediaCleanupService;
+        this.transactionTemplate = transactionTemplate;
         this.clock = clock;
     }
 
@@ -120,13 +138,22 @@ public class ServiceAdminService {
             requireAllLanguages(after);
         }
 
+        // Alt text describes the image, so it can only be sent while there is one (SI-06).
+        if (service.getImageMediaId() == null && sent.values().stream().anyMatch(text -> text.imageAltText() != null)) {
+            throw CmsException.invalid("imageAltText cannot be set until the service has an image.");
+        }
+
         sent.forEach((language, text) -> {
             ClinicServiceTranslation row = saved.get(language);
             if (row == null) {
+                // A service with an image already has every language (SI-04), so a new row has no image yet.
                 saved.put(language, translationRepository.save(
                         new ClinicServiceTranslation(service.getId(), language, text.name(), text.shortDescription())));
             } else {
                 row.update(text.name(), text.shortDescription());
+                if (text.imageAltText() != null) {
+                    row.changeImageAltText(text.imageAltText());
+                }
             }
         });
         service.updateDetails(update.durationMinutes(), update.bufferMinutes(), scaled(update.priceUsd()),
@@ -148,6 +175,130 @@ public class ServiceAdminService {
             serviceRepository.saveAndFlush(service);
         }
         return versioned(service, saved);
+    }
+
+    /**
+     * Sets or replaces the image with alt text in every language (SI-03, SI-04). The file is
+     * uploaded first; the service switches to it only if the database update then succeeds, and the
+     * replaced file is deleted from storage after the commit (SI-05).
+     */
+    public VersionedService replaceImage(String id, String ifMatch, MultipartFile image,
+            List<ServiceImageAltText> altTexts) {
+        long expectedVersion = parseIfMatch(ifMatch);
+        UUID serviceId = parseId(id);
+        Map<Language, String> alts = cleanAltTexts(altTexts);
+        if (image == null || image.isEmpty()) {
+            throw CmsException.invalid("An image is required.");
+        }
+
+        // Fail fast before uploading; the authoritative checks run again under the row lock.
+        transactionTemplate.executeWithoutResult(status -> requireImageable(
+                loadForUpdate(serviceId, expectedVersion)));
+
+        CmsMedia uploaded = mediaService.store(image);
+        ImageChange change;
+        try {
+            change = transactionTemplate.execute(status -> {
+                ClinicService service = loadForUpdate(serviceId, expectedVersion);
+                Map<Language, ClinicServiceTranslation> saved = requireImageable(service);
+                mediaRepository.saveAndFlush(uploaded);
+                UUID previousId = service.getImageMediaId();
+                alts.forEach((language, alt) -> saved.get(language).changeImageAltText(alt));
+                service.changeImage(uploaded.getId(), Instant.now(clock));
+                serviceRepository.saveAndFlush(service);
+                String replacedKey = removeMedia(previousId);
+                return new ImageChange(versioned(service, saved), replacedKey);
+            });
+        } catch (RuntimeException failure) {
+            mediaService.discard(uploaded);
+            throw failure;
+        }
+
+        mediaCleanupService.complete(uploaded.getObjectKey());
+        if (change.replacedKey() != null) {
+            mediaService.deleteUnreferenced(change.replacedKey());
+        }
+        return change.service();
+    }
+
+    /** Removes the image and every alt text (SI-05). Removing when there is none changes nothing. */
+    public VersionedService removeImage(String id, String ifMatch) {
+        long expectedVersion = parseIfMatch(ifMatch);
+        UUID serviceId = parseId(id);
+        ImageChange change = transactionTemplate.execute(status -> {
+            ClinicService service = loadForUpdate(serviceId, expectedVersion);
+            Map<Language, ClinicServiceTranslation> saved = savedTranslations(service.getId());
+            if (service.getImageMediaId() == null) {
+                return new ImageChange(versioned(service, saved), null);
+            }
+            UUID previousId = service.getImageMediaId();
+            saved.values().forEach(row -> row.changeImageAltText(null));
+            service.changeImage(null, Instant.now(clock));
+            serviceRepository.saveAndFlush(service);
+            return new ImageChange(versioned(service, saved), removeMedia(previousId));
+        });
+        if (change.replacedKey() != null) {
+            mediaService.deleteUnreferenced(change.replacedKey());
+        }
+        return change.service();
+    }
+
+    private record ImageChange(VersionedService service, String replacedKey) {
+    }
+
+    /** Every language needs its text before an image can carry alt text in it (SI-04). */
+    private Map<Language, ClinicServiceTranslation> requireImageable(ClinicService service) {
+        Map<Language, ClinicServiceTranslation> saved = savedTranslations(service.getId());
+        requireAllLanguages(saved.keySet());
+        return saved;
+    }
+
+    /**
+     * Deletes the media row of a replaced image and schedules its object for deletion. Must run
+     * after the service stopped pointing at it. Returns the object key, or null when there was none.
+     */
+    private String removeMedia(UUID mediaId) {
+        if (mediaId == null) {
+            return null;
+        }
+        CmsMedia previous = mediaRepository.findById(mediaId).orElse(null);
+        if (previous == null) {
+            return null;
+        }
+        mediaRepository.delete(previous);
+        mediaRepository.flush();
+        mediaCleanupService.scheduleNow(previous.getObjectKey());
+        return previous.getObjectKey();
+    }
+
+    /** Exactly one alt text per language, trimmed, 1–200 characters (SI-03). */
+    private static Map<Language, String> cleanAltTexts(List<ServiceImageAltText> altTexts) {
+        Map<Language, String> cleaned = new EnumMap<>(Language.class);
+        if (altTexts != null) {
+            for (ServiceImageAltText alt : altTexts) {
+                if (alt == null) {
+                    throw CmsException.invalid("altTexts must not contain null entries.");
+                }
+                Language language = Language.fromCode(alt.languageCode())
+                        .orElseThrow(() -> CmsException.invalid("languageCode must be one of km, en, zh."));
+                if (cleaned.containsKey(language)) {
+                    throw CmsException.invalid("Each languageCode may appear only once.");
+                }
+                cleaned.put(language, trimmed(alt.imageAltText(), ALT_TEXT_MAX, "imageAltText", language));
+            }
+        }
+        if (cleaned.size() != Language.values().length) {
+            throw CmsException.invalid("A new image needs alt text in km, en and zh.");
+        }
+        return cleaned;
+    }
+
+    private ClinicService loadForUpdate(UUID id, long expectedVersion) {
+        ClinicService service = serviceRepository.findForUpdate(id).orElseThrow(CmsException::serviceNotFound);
+        if (service.getVersion() != expectedVersion) {
+            throw CmsException.serviceVersionMismatch();
+        }
+        return service;
     }
 
     private ClinicService loadForUpdate(String id, long expectedVersion) {
@@ -200,12 +351,13 @@ public class ServiceAdminService {
             if (cleaned.containsKey(language)) {
                 throw CmsException.invalid("Each languageCode may appear only once.");
             }
-            if (text.imageAltText() != null) {
-                throw CmsException.invalid("imageAltText cannot be set until the service has an image.");
-            }
             String name = trimmed(text.name(), NAME_MAX, "name", language);
             String description = trimmed(text.shortDescription(), DESCRIPTION_MAX, "shortDescription", language);
-            cleaned.put(language, new AdminServiceText(language.code(), name, description, null));
+            // Null keeps the saved alt text; whether one may be sent is checked against the image (SI-06).
+            String alt = text.imageAltText() == null
+                    ? null
+                    : trimmed(text.imageAltText(), ALT_TEXT_MAX, "imageAltText", language);
+            cleaned.put(language, new AdminServiceText(language.code(), name, description, alt));
         }
         return cleaned;
     }

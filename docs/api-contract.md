@@ -654,3 +654,73 @@ Errors use the CMS problem-details body.
 | --- | --- | --- |
 | SA-09 | Can `RECEPTION` view services in the dashboard? | No. All admin service routes are `ADMIN` only. |
 | SA-10 | Audit history of price changes? | Not in phase 1. Only `updatedAt` is kept. |
+
+## Service images (phase 2a) — approved November 18, 2026
+
+> **Status:** Approved by the Team Lead on November 18, 2026, including decisions SI-01 to SI-07.
+> Adds images to [admin service editing](#admin-service-editing-phase-1--approved-november-18-2026)
+> and replaces SA-03's "images are phase 2" and the phase 1 rule that `imageAltText` must be
+> absent. Image rules, storage and cleanup follow the [homepage banner](#cms-homepage-banner--approved-november-16-2026).
+
+### Decisions
+
+| ID | Decision | Answer |
+| --- | --- | --- |
+| SI-01 | Who can change images? | Keycloak `ADMIN` only, like every admin service route. |
+| SI-02 | Image rules | JPEG, PNG or WebP, up to 5 MiB and 40 million pixels. Stored privately in R2; responses carry a signed URL valid for five minutes. |
+| SI-03 | Alt text | One image per service, shared by all languages; the alt text is translated. Setting an image requires alt text in `km`, `en` and `zh`, 1–200 characters each. |
+| SI-04 | Languages without text | A service must already have its name and description in all three languages before an image is set; otherwise `409 TRANSLATION_MISSING`. |
+| SI-05 | Replacing or removing | The old file is removed from the database in the same transaction and deleted from R2 afterwards; failed deletions are retried by the media cleanup job. Removing an image also clears every alt text. |
+| SI-06 | Editing alt text only | `PUT /api/v1/admin/services/{id}` accepts `imageAltText` (1–200 characters) when the service has an image. Absent or `null` keeps the saved alt text. Sending it for a service without an image is `400 VALIDATION_ERROR`. |
+| SI-07 | Website | Service cards show the uploaded image when `imageUrl` is set, with `imageAltText` as its alt text; otherwise they keep the bundled picture by `slug` (SV-10). |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| PUT | /api/v1/admin/services/{id}/image | Keycloak ADMIN role, `If-Match` required |
+| DELETE | /api/v1/admin/services/{id}/image | Keycloak ADMIN role, `If-Match` required |
+
+### `PUT /api/v1/admin/services/{id}/image`
+
+`multipart/form-data` with two required parts:
+
+| Part | Type | Content |
+| --- | --- | --- |
+| `image` | File | JPEG, PNG or WebP, up to 5 MiB and 40 million pixels |
+| `altTexts` | `application/json` | Array of exactly three `{ "languageCode", "imageAltText" }`, one per `km`, `en`, `zh` |
+
+The service switches to the new image only after the R2 upload and the PostgreSQL update both
+succeed. Returns HTTP `200` with the admin service body (signed `imageUrl`, alt text in each
+translation) and the new `ETag`.
+
+### `DELETE /api/v1/admin/services/{id}/image`
+
+No body. Returns HTTP `200` with the admin service body (`imageUrl: null`, every `imageAltText:
+null`) and the new `ETag`. Deleting when there is no image changes nothing and returns the current
+body and `ETag`.
+
+### Errors
+
+As for admin service editing, plus:
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Missing `image` or `altTexts`, malformed JSON, a language missing or repeated, alt text empty or over 200 characters, undecodable image |
+| 409 | `TRANSLATION_MISSING` | The service lacks its name and description in a language (SI-04) |
+| 413 | `IMAGE_TOO_LARGE` | Image larger than 5 MiB |
+| 415 | `UNSUPPORTED_IMAGE` | Image is not JPEG, PNG or WebP |
+| 503 | `STORAGE_UNAVAILABLE` | R2 is unavailable or not configured |
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Upload a WebP with three alt texts | `200`; `imageUrl` set; public list shows the image and the alt text in each language |
+| Upload with only `en` alt text | `400 VALIDATION_ERROR`; nothing stored |
+| Replace an image | `200`; old R2 object deleted (or queued for cleanup) |
+| Upload a 6 MiB file or a GIF | `413` or `415`; nothing changes |
+| Remove the image | `200`; `imageUrl` and every `imageAltText` are `null`; the website shows the bundled picture again |
+| Change only the `zh` alt text with `PUT` | `200`; image and other alt texts unchanged |
+| Send `imageAltText` with `PUT` for a service without an image | `400 VALIDATION_ERROR` |
+| Two admins upload from the same `ETag` | First `200`; second `412`; the second upload is discarded |

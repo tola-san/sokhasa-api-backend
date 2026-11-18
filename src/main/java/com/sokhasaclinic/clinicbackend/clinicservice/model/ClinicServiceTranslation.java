@@ -37,9 +37,14 @@ public class ClinicServiceTranslation {
         update(name, shortDescription);
     }
 
-    /** Callers trim and validate the values first. The image alt text is not edited in phase 1. */
+    /** Callers trim and validate the values first. */
     public void update(String newName, String newShortDescription) {
         name = newName;
         shortDescription = newShortDescription;
+    }
+
+    /** Alt text of the service image in this language; {@code null} when the service has no image. */
+    public void changeImageAltText(String newImageAltText) {
+        imageAltText = newImageAltText;
     }
 }

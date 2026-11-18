@@ -7,7 +7,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -23,8 +26,13 @@ import com.sokhasaclinic.clinicbackend.clinicservice.service.ServiceAdminService
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsException;
 import com.sokhasaclinic.clinicbackend.cms.exception.CmsExceptionHandler;
 import com.sokhasaclinic.clinicbackend.common.i18n.Language;
+import com.sokhasaclinic.clinicbackend.clinicservice.dto.AdminServiceDtos.ServiceImageAltText;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import org.mockito.ArgumentCaptor;
+import org.springframework.http.HttpMethod;
+import org.springframework.mock.web.MockMultipartFile;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -137,6 +145,44 @@ class AdminServiceControllerTests {
         mvc.perform(patch(SERVICES + "/" + ID + "/deactivate").header("If-Match", "\"3\""))
                 .andExpect(status().isOk())
                 .andExpect(header().string("ETag", "\"4\""));
+    }
+
+    @Test
+    void imageUploadReadsTheFileAndUtf8AltTextsJson() throws Exception {
+        when(service.replaceImage(eq(ID), eq("\"3\""), any(), any())).thenReturn(new VersionedService(body(4), 4));
+        String alts = "[{\"languageCode\":\"km\",\"imageAltText\":\"រូបភាព\"},"
+                + "{\"languageCode\":\"en\",\"imageAltText\":\"Photo\"},"
+                + "{\"languageCode\":\"zh\",\"imageAltText\":\"照片\"}]";
+
+        mvc.perform(multipart(HttpMethod.PUT, SERVICES + "/" + ID + "/image")
+                        .file(new MockMultipartFile("image", "s.png", "image/png", new byte[] {1}))
+                        .file(new MockMultipartFile("altTexts", "", "application/json", alts.getBytes(StandardCharsets.UTF_8)))
+                        .header("If-Match", "\"3\""))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"4\""));
+
+        ArgumentCaptor<List<ServiceImageAltText>> captured = ArgumentCaptor.captor();
+        verify(service).replaceImage(eq(ID), eq("\"3\""), any(), captured.capture());
+        assertEquals("រូបភាព", captured.getValue().getFirst().imageAltText());
+    }
+
+    @Test
+    void imageUploadWithoutAltTextsIsValidationError() throws Exception {
+        mvc.perform(multipart(HttpMethod.PUT, SERVICES + "/" + ID + "/image")
+                        .file(new MockMultipartFile("image", "s.png", "image/png", new byte[] {1}))
+                        .header("If-Match", "\"3\""))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.type").value("VALIDATION_ERROR"));
+        verifyNoInteractions(service);
+    }
+
+    @Test
+    void imageRemovalReturnsNewEtag() throws Exception {
+        when(service.removeImage(ID, "\"4\"")).thenReturn(new VersionedService(body(5), 5));
+
+        mvc.perform(delete(SERVICES + "/" + ID + "/image").header("If-Match", "\"4\""))
+                .andExpect(status().isOk())
+                .andExpect(header().string("ETag", "\"5\""));
     }
 
     private static AdminService body(long version) {

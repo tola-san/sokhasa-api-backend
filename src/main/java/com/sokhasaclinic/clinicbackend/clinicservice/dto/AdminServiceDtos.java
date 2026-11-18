@@ -23,8 +23,9 @@ public final class AdminServiceDtos {
     }
 
     /**
-     * Service text in one language. In requests, {@code imageAltText} must be absent or null in
-     * phase 1; the service layer checks that and the text lengths after trimming.
+     * Service text in one language. In PUT requests, an absent or null {@code imageAltText} keeps
+     * the saved one, and a value is only allowed when the service has an image (SI-06). The service
+     * layer checks this and the text lengths after trimming.
      */
     @JsonInclude(JsonInclude.Include.ALWAYS)
     public record AdminServiceText(
@@ -65,6 +66,10 @@ public final class AdminServiceDtos {
             @NotNull @Min(0) @Max(9999) Integer sortOrder,
             @Size(max = 3) List<@Valid @NotNull AdminServiceText> translations
     ) {
+    }
+
+    /** One entry of the {@code altTexts} part of {@code PUT …/image} (decision SI-03). */
+    public record ServiceImageAltText(String languageCode, String imageAltText) {
     }
 
     /** A service and its version, sent as the strong ETag {@code "<version>"}. */
