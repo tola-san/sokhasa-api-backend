@@ -47,6 +47,14 @@ public class SecurityConfig {
             "/scalar",
     };
 
+    /** Admin routes RECEPTION may use too; every other {@code /api/v1/admin/**} route stays ADMIN only. */
+    static final String[] RECEPTION_ROUTES = {
+            "/api/v1/admin/appointments",
+            "/api/v1/admin/appointments/**",
+            "/api/v1/admin/dashboard/summary",
+            "/api/v1/admin/doctors",
+    };
+
     /**
      * The only filter chain for the application. It has no security matcher, so it covers every
      * request, and it denies by default: a new controller stays unreachable until a rule here
@@ -63,6 +71,10 @@ public class SecurityConfig {
                         // instead of turning them into 401.
                         .dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll()
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_ROUTES).permitAll()
+                        // Guests submit booking requests (appointment contract, approved November 18, 2026).
+                        .requestMatchers(HttpMethod.POST, "/api/v1/public/appointments").permitAll()
+                        // Reception works appointments as well as admins (AP-07).
+                        .requestMatchers(RECEPTION_ROUTES).hasAnyRole("ADMIN", "RECEPTION")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         // Add new role rules above this line, most specific first.
                         .anyRequest().denyAll())
