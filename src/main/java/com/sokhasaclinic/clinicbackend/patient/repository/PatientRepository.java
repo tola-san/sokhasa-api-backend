@@ -1,9 +1,12 @@
 package com.sokhasaclinic.clinicbackend.patient.repository;
 
-/**
- * Define the patient record queries needed by the booking workflow once the patient entity
- * mapping is in place.
- */
-public interface PatientRepository {
-    // TODO: Extend JpaRepository after the JPA entity and ID type are defined.
+import com.sokhasaclinic.clinicbackend.patient.model.Patient;
+import java.util.Optional;
+import java.util.UUID;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface PatientRepository extends JpaRepository<Patient, UUID> {
+    Optional<Patient> findFirstByPhone(String phone);
 }

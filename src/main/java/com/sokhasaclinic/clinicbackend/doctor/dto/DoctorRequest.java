@@ -1,8 +1,18 @@
 package com.sokhasaclinic.clinicbackend.doctor.dto;
 
-/**
- * Define fields and Bean Validation constraints for approved doctor management operations.
- */
-public record DoctorRequest() {
-    // TODO: Add record components and validation constraints after contract approval.
-}
+import com.sokhasaclinic.clinicbackend.doctor.model.Doctor;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+import java.util.UUID;
+
+public record DoctorRequest(
+        @NotBlank(message = "Doctor name is required.")
+        @Size(max = 255, message = "Doctor name must be at most 255 characters.")
+        String name,
+
+        UUID profileImageId,
+
+        String description,
+
+        Doctor.Status status
+) {}

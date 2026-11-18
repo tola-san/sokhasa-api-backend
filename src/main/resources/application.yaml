@@ -1,6 +1,13 @@
 spring:
   application:
     name: clinic-backend
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
   jpa:
     hibernate:
       ddl-auto: validate
@@ -15,6 +22,15 @@ spring:
 
 server:
   port: "${PORT:8080}"
+
+telegram:
+  enabled: "${TELEGRAM_ENABLED:false}"
+  bot-token: "${TELEGRAM_BOT_TOKEN:}"
+  chat-id: "${TELEGRAM_CHAT_ID:}"
+  retry:
+    max-attempts: "${TELEGRAM_RETRY_MAX_ATTEMPTS:5}"
+  worker:
+    interval-ms: 10000
 
 management:
   endpoints:
@@ -31,5 +47,4 @@ management:
 
 logging:
   level:
-#
-    com.sokhasaclinic.clinicbackend: DEBUG
+    com.sokhasaclinic.clinicbackend: INFO

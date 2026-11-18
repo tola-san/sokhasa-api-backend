@@ -9,6 +9,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -21,30 +22,50 @@ import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthen
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.util.StringUtils;
 
-
-
-
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
 
     private static final Set<String> STAFF_ROLES = Set.of("ADMIN", "RECEPTION");
 
     @Bean
-    SecurityFilterChain cmsAdminSecurity(
+    SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             ObjectProvider<JwtDecoder> jwtDecoder,
             @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}") String issuerUri)
-
             throws Exception {
-        // Apply this filter chain to CMS admin paths. Public routes sit outside it.
-        http.securityMatcher("/api/v1/admin/pages", "/api/v1/admin/pages/**", "/api/v1/admin/media/upload")
-                .authorizeHttpRequests(requests -> requests.anyRequest().hasRole("ADMIN"))
+
+        http
+                .authorizeHttpRequests(requests -> requests
+                        // Public endpoints
+                        .requestMatchers(
+                                "/api/v1/health",
+                                "/api/v1/clinic/info",
+                                "/api/v1/public/**",
+                                "/v3/api-docs/**",
+                                "/swagger-ui/**",
+                                "/swagger-ui.html"
+                        ).permitAll()
+
+                        // Endpoints accessible by both ADMIN and RECEPTION
+                        .requestMatchers(
+                                "/api/v1/auth/me",
+                                "/api/v1/auth/permissions",
+                                "/api/v1/admin/appointments",
+                                "/api/v1/admin/appointments/**",
+                                "/api/v1/admin/dashboard",
+                                "/api/v1/admin/dashboard/**"
+                        ).hasAnyRole("ADMIN", "RECEPTION")
+
+                        // Endpoints accessible only by ADMIN
+                        .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+
+                        // Any other request under /api/v1 requires authentication
+                        .anyRequest().authenticated()
+                )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                // These paths authenticate through the Authorization header, so CSRF protection is unnecessary here.
                 .csrf(AbstractHttpConfigurer::disable)
                 .exceptionHandling(errors -> errors.authenticationEntryPoint(new BearerTokenAuthenticationEntryPoint()));
 
-        // With no issuer configured, the app can start and CMS admin requests still require authentication.
         if (StringUtils.hasText(issuerUri)) {
             JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
             converter.setJwtGrantedAuthoritiesConverter(SecurityConfig::staffAuthorities);
@@ -56,8 +77,7 @@ public class SecurityConfig {
         return http.build();
     }
 
-    private static Collection<GrantedAuthority> staffAuthorities(Jwt jwt) {
-        // Keycloak puts realm roles in realm_access.roles. Spring's hasRole expects the ROLE_ prefix.
+    public static Collection<GrantedAuthority> staffAuthorities(Jwt jwt) {
         if (!(jwt.getClaims().get("realm_access") instanceof Map<?, ?> realmAccess)
                 || !(realmAccess.get("roles") instanceof Collection<?> roles)) {
             return List.of();

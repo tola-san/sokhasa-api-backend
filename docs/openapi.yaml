@@ -1,7 +1,8 @@
 openapi: 3.1.0
 info:
   title: Sokhasa Clinic API
-  version: 0.1.0
+  version: 1.0.0
+  description: REST API for Sokhasa Longevity Clinic & Maternity
 servers:
   - url: /api/v1
 paths:
@@ -12,16 +13,9 @@ paths:
       responses:
         '200':
           description: Application is healthy
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [status]
-                properties:
-                  status:
-                    const: UP
         '503':
           description: Application is unavailable
+
   /clinic/info:
     get:
       operationId: getClinicInfo
@@ -29,16 +23,477 @@ paths:
       responses:
         '200':
           description: Clinic information
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [name, message]
-                properties:
-                  name:
-                    type: string
-                  message:
-                    type: string
-              example:
-                name: Clinic Sokhasa
-                message: Welcome to Clinic Sokhasa.
+
+  /auth/me:
+    get:
+      operationId: getAuthMe
+      summary: Get currently authenticated user
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user information
+
+  /auth/permissions:
+    get:
+      operationId: getAuthPermissions
+      summary: Get current user permissions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current user permissions
+
+  /public/doctors:
+    get:
+      operationId: listPublicDoctors
+      summary: List active clinic doctors
+      responses:
+        '200':
+          description: List of active doctors
+
+  /public/doctors/{id}:
+    get:
+      operationId: getPublicDoctor
+      summary: Get active doctor details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor details
+
+  /public/appointments/availability:
+    get:
+      operationId: checkAvailability
+      summary: Check doctor and service slot availability
+      parameters:
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: doctorId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Available time slots
+
+  /public/services:
+    get:
+      operationId: listPublicServices
+      summary: List active services
+      responses:
+        '200':
+          description: List of active services
+
+  /public/services/{id}:
+    get:
+      operationId: getPublicService
+      summary: Get public service details
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Service details
+
+  /public/appointments:
+    post:
+      operationId: createPublicAppointment
+      summary: Create public appointment booking request
+      responses:
+        '201':
+          description: Booking submitted successfully
+
+  /public/pages/{slug}:
+    get:
+      operationId: getPublicPage
+      summary: Get published page translation
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lang
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [km, en, zh]
+      responses:
+        '200':
+          description: Published page translation
+
+  /public/settings/clinic:
+    get:
+      operationId: getPublicClinicSettings
+      summary: Get public clinic info and hours
+      responses:
+        '200':
+          description: Public clinic info
+
+  /admin/doctors:
+    get:
+      operationId: listAdminDoctors
+      summary: List doctors with filtering and pagination
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctors list
+    post:
+      operationId: createDoctor
+      summary: Create a new doctor
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Doctor created
+
+  /admin/doctors/{id}:
+    get:
+      operationId: getAdminDoctor
+      summary: Get doctor detail
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctor detail
+    put:
+      operationId: updateDoctor
+      summary: Update doctor
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctor updated
+    delete:
+      operationId: deleteDoctor
+      summary: Delete doctor
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Doctor deleted
+
+  /admin/doctors/{id}/activate:
+    patch:
+      operationId: activateDoctor
+      summary: Activate doctor
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctor activated
+
+  /admin/doctors/{id}/deactivate:
+    patch:
+      operationId: deactivateDoctor
+      summary: Deactivate doctor
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctor deactivated
+
+  /admin/doctors/{doctorId}/schedules:
+    get:
+      operationId: listDoctorSchedules
+      summary: List doctor working schedules
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Schedules list
+    post:
+      operationId: createDoctorSchedule
+      summary: Create doctor schedule
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Schedule created
+
+  /admin/services:
+    get:
+      operationId: listAdminServices
+      summary: List clinic services
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Services list
+    post:
+      operationId: createService
+      summary: Create a new service
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Service created
+
+  /admin/appointments:
+    get:
+      operationId: listAppointments
+      summary: List clinic appointments with filters
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointments list
+
+  /admin/appointments/{id}:
+    get:
+      operationId: getAppointmentDetails
+      summary: Get appointment detail and history
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointment details
+
+  /admin/appointments/{id}/assign-doctor:
+    patch:
+      operationId: assignDoctorToAppointment
+      summary: Assign doctor to appointment
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Doctor assigned
+
+  /admin/appointments/{id}/confirm:
+    patch:
+      operationId: confirmAppointment
+      summary: Confirm appointment
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointment confirmed
+
+  /admin/appointments/{id}/reject:
+    patch:
+      operationId: rejectAppointment
+      summary: Reject appointment
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointment rejected
+
+  /admin/appointments/{id}/reschedule:
+    patch:
+      operationId: rescheduleAppointment
+      summary: Reschedule appointment
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointment rescheduled
+
+  /admin/appointments/{id}/history:
+    get:
+      operationId: getAppointmentHistory
+      summary: Get status transition history
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Appointment history
+
+  /admin/pages:
+    get:
+      operationId: listAdminPages
+      summary: List CMS pages
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Pages list
+    post:
+      operationId: createPage
+      summary: Create CMS page draft
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Page draft created
+
+  /admin/pages/{id}:
+    get:
+      operationId: getAdminPage
+      summary: Get page detail with ETag
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Page detail
+    put:
+      operationId: updatePage
+      summary: Update page working copy
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Page updated
+    delete:
+      operationId: deletePage
+      summary: Delete page draft
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Page deleted
+
+  /admin/pages/{id}/publish:
+    patch:
+      operationId: publishPage
+      summary: Publish page translations
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Page published
+
+  /admin/pages/{id}/unpublish:
+    patch:
+      operationId: unpublishPage
+      summary: Unpublish page
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Page unpublished
+
+  /admin/media/upload:
+    post:
+      operationId: uploadMedia
+      summary: Upload media image
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Image uploaded
+
+  /admin/media:
+    get:
+      operationId: listMedia
+      summary: List media
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of media files
+
+  /admin/staff:
+    get:
+      operationId: listStaff
+      summary: List clinic staff
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Staff list
+    post:
+      operationId: createStaff
+      summary: Create staff account
+      security:
+        - bearerAuth: []
+      responses:
+        '201':
+          description: Staff created
+
+  /admin/settings/clinic:
+    get:
+      operationId: getClinicSettings
+      summary: Get clinic settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Clinic settings
+    put:
+      operationId: updateClinicSettings
+      summary: Update clinic settings
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Clinic settings updated
+
+  /admin/settings/working-hours:
+    get:
+      operationId: getWorkingHours
+      summary: Get clinic working hours
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Clinic working hours
+    put:
+      operationId: updateWorkingHours
+      summary: Update clinic working hours
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Clinic working hours updated
+
+  /admin/dashboard/overview:
+    get:
+      operationId: getDashboardOverview
+      summary: Get dashboard overview metrics
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Overview metrics
+
+  /admin/dashboard/upcoming-appointments:
+    get:
+      operationId: getUpcomingAppointments
+      summary: Get upcoming confirmed appointments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Upcoming appointments list
+
+  /admin/dashboard/recent-activities:
+    get:
+      operationId: getRecentActivities
+      summary: Get recent status transition activities
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Recent activity log
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
