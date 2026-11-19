@@ -237,6 +237,219 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
 
+  /public/services/{slug}:
+    get:
+      tags:
+        - Public Services
+      operationId: getPublicService
+      summary: Service detail with description, preparation and related doctors
+      description: PC-02 to PC-06, November 19, 2026. No price fields. Cache-Control no-store.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: The active service in the requested language
+          headers:
+            Content-Language:
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicServiceDetailWrapper'
+        '400':
+          description: lang is missing or invalid (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Unknown or inactive service (SERVICE_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /public/doctors:
+    get:
+      tags:
+        - Public Doctors
+      operationId: listPublicDoctors
+      summary: List public doctor profiles in one language
+      description: PC-04, November 19, 2026. ACTIVE doctors with a slug and all three profile languages. Cache-Control no-store.
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: Public doctors; an empty array when there are none
+          headers:
+            Content-Language:
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDoctorListWrapper'
+        '400':
+          description: lang is missing or invalid (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /public/doctors/{slug}:
+    get:
+      tags:
+        - Public Doctors
+      operationId: getPublicDoctor
+      summary: One public doctor profile with linked services
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: The doctor profile in the requested language
+          headers:
+            Content-Language:
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicDoctorDetailWrapper'
+        '400':
+          description: lang is missing or invalid (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: Unknown or non-public doctor (DOCTOR_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/{id}/profile:
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: updateDoctorProfile
+      summary: Set a doctor's public slug, title and bio
+      description: ADMIN only (PC-05, PC-07). Increases the doctor's version.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorProfileWrite'
+      responses:
+        '200':
+          description: Saved profile
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfileWrapper'
+        '400':
+          description: Invalid slug or translations (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown doctor (DOCTOR_NOT_FOUND)
+        '409':
+          description: Slug used by another doctor (DOCTOR_SLUG_TAKEN)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /admin/services/{id}/doctors:
+    put:
+      tags:
+        - Admin Services
+      security:
+        - BearerAuth: []
+      operationId: replaceServiceDoctors
+      summary: Replace the doctors linked to a service
+      description: ADMIN only (PC-06). Links are information only and do not affect booking or doctor assignment.
+      parameters:
+        - $ref: '#/components/parameters/ServiceId'
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ServiceDoctorsWrite'
+      responses:
+        '200':
+          description: Saved links
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceDoctorsWrapper'
+        '400':
+          description: Duplicate or too many doctorIds (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown service (SERVICE_NOT_FOUND) or doctor (DOCTOR_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
   /admin/services:
     get:
       tags:
@@ -464,15 +677,285 @@ paths:
         '428':
           description: If-Match header is missing (VERSION_REQUIRED)
 
+  /public/packages:
+    get:
+      tags: [Public Packages]
+      operationId: listPublicPackages
+      summary: List active packages with prices in one language
+      description: PK-02, PK-06, PK-12, November 19, 2026. No fallback language. Cache-Control no-store.
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: Active packages; an empty array when there are none
+          headers:
+            Content-Language:
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPackageListWrapper'
+        '400':
+          description: lang is missing or invalid (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /public/packages/{slug}:
+    get:
+      tags: [Public Packages]
+      operationId: getPublicPackage
+      summary: Package detail with price, included services, exclusions and preparation
+      description: PK-04 to PK-06, November 19, 2026. Cache-Control no-store.
+      parameters:
+        - name: slug
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: The active package in the requested language
+          headers:
+            Content-Language:
+              schema:
+                $ref: '#/components/schemas/LanguageCode'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicPackageDetailWrapper'
+        '400':
+          description: lang is missing or invalid (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          $ref: '#/components/responses/PackageNotFound'
+
+  /admin/packages:
+    get:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: listAdminPackages
+      summary: List every package for editing
+      responses:
+        '200':
+          description: Active and inactive packages with admin fields and every saved language
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPackageListWrapper'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+    post:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: createAdminPackage
+      summary: Create a package; it starts INACTIVE (PK-01)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPackageWrite'
+      responses:
+        '201':
+          description: The created package and ETag "0"
+          headers:
+            Location:
+              schema:
+                type: string
+            ETag:
+              $ref: '#/components/headers/PackageETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPackageWrapper'
+        '400':
+          $ref: '#/components/responses/PackageValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: An includedServiceIds entry does not exist (SERVICE_NOT_FOUND)
+        '409':
+          description: Another package has the slug (PACKAGE_SLUG_TAKEN)
+
+  /admin/packages/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PackageId'
+    get:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: getAdminPackage
+      summary: Get one package for editing
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminPackageSaved'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/PackageNotFound'
+    put:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: updateAdminPackage
+      summary: Replace a package's fields and included services
+      description: |
+        Languages not sent keep their saved text. An ACTIVE package must still have km, en and zh
+        afterwards, otherwise 409 TRANSLATION_MISSING. Existing appointments keep their copied
+        duration and buffer (PK-03). Status is changed only by activate and deactivate.
+      parameters:
+        - $ref: '#/components/parameters/PackageIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminPackageWrite'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminPackageSaved'
+        '400':
+          $ref: '#/components/responses/PackageValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown package (PACKAGE_NOT_FOUND) or included service (SERVICE_NOT_FOUND)
+        '409':
+          description: PACKAGE_SLUG_TAKEN or TRANSLATION_MISSING
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /admin/packages/{id}/activate:
+    parameters:
+      - $ref: '#/components/parameters/PackageId'
+    patch:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: activateAdminPackage
+      summary: Make a package public
+      description: Requires km, en and zh text and at least one ACTIVE included service (PK-06).
+      parameters:
+        - $ref: '#/components/parameters/PackageIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminPackageSaved'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/PackageNotFound'
+        '409':
+          description: TRANSLATION_MISSING or PACKAGE_SERVICES_INACTIVE
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /admin/packages/{id}/deactivate:
+    parameters:
+      - $ref: '#/components/parameters/PackageId'
+    patch:
+      tags: [Admin Packages]
+      security:
+        - BearerAuth: []
+      operationId: deactivateAdminPackage
+      summary: Hide a package publicly; existing appointments are unchanged
+      parameters:
+        - $ref: '#/components/parameters/PackageIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminPackageSaved'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/PackageNotFound'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /public/booking-slots:
+    get:
+      tags: [Public Booking]
+      operationId: getBookingSlots
+      summary: Available exact starts on a 30-minute grid in clinic time
+      description: |
+        Requires clinic-verified doctor/service/date windows. Returns available starts only,
+        sorted and deduplicated. Duration and buffer follow the service. Pending exact requests
+        reserve a doctor; unresolved legacy pending period requests block exact availability
+        for that date and period across services. Availability is a hint, rechecked on submission.
+        Responses use Cache-Control no-store.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available starts; an empty list when no verified availability remains
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BookingSlots'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+
   /public/booking-periods:
     get:
       tags:
         - Public Booking
       operationId: getBookingPeriods
-      summary: Periods on a date and whether a service still fits (AP-11)
+      summary: Periods on a date and whether a service or package still fits (AP-11, PK-08)
       description: |
         A hint for the booking form; the booking request checks capacity again under a lock. A date
         outside the booking window returns every period with available false.
+        Send exactly one of serviceId or packageId; both or neither is 400 VALIDATION_ERROR.
+        An unknown or inactive package is 404 PACKAGE_NOT_FOUND.
       parameters:
         - name: date
           in: query
@@ -483,7 +966,15 @@ paths:
             example: '2026-11-20'
         - name: serviceId
           in: query
-          required: true
+          required: false
+          description: Required unless packageId is sent.
+          schema:
+            type: string
+            format: uuid
+        - name: packageId
+          in: query
+          required: false
+          description: Required unless serviceId is sent (PK-07).
           schema:
             type: string
             format: uuid
@@ -514,6 +1005,11 @@ paths:
         Requires an Idempotency-Key (AP-03): the same key and body return the first response; the
         same key with a different body returns 409 IDEMPOTENCY_CONFLICT. The period must have
         capacity left (409 PERIOD_FULL). At most 5 requests per client per 10 minutes (AP-12).
+        Send exactly one of preferredPeriod or preferredStartTime. Exact requests atomically reserve
+        an eligible doctor interval, buffer included; conflicts return 409 SLOT_UNAVAILABLE.
+        All requests still start as PENDING and require reception approval.
+        Send exactly one of serviceId or packageId (PK-07). Package requests use preferredPeriod
+        only; the appointment copies the package's duration and buffer (PK-03).
       parameters:
         - name: Idempotency-Key
           in: header
@@ -540,9 +1036,9 @@ paths:
         '400':
           $ref: '#/components/responses/AppointmentValidationError'
         '404':
-          description: Unknown or inactive service (SERVICE_NOT_FOUND)
+          description: Unknown or inactive service (SERVICE_NOT_FOUND) or package (PACKAGE_NOT_FOUND)
         '409':
-          description: PERIOD_FULL or IDEMPOTENCY_CONFLICT
+          description: PERIOD_FULL, SLOT_UNAVAILABLE or IDEMPOTENCY_CONFLICT
           content:
             application/problem+json:
               schema:
@@ -864,8 +1360,559 @@ paths:
                         fullName:
                           type: string
 
+    post:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: createDoctor
+      summary: Create a doctor resource
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorWrite'
+      responses:
+        '201':
+          description: Created resource
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+            Location:
+              schema:
+                type: string
+              description: Detail URL for the created resource.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/manage:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: manageDoctors
+      summary: List all active and inactive doctor resources
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      responses:
+        '200':
+          description: Doctor management response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/{id}:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getManagedDoctor
+      summary: Read a doctor and ETag
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: updateDoctor
+      summary: Replace doctor fields and status
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorWrite'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/doctors/{id}/booking-windows:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: listDoctorBookingWindows
+      summary: List working windows in a date range of at most 62 days
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: serviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor management response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: createDoctorBookingWindow
+      summary: Create a verified service working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorBookingWindowWrite'
+      responses:
+        '201':
+          description: Created resource
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+            Location:
+              schema:
+                type: string
+              description: Detail URL for the created resource.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/{id}/booking-windows/{windowId}:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getDoctorBookingWindow
+      summary: Read a working window and ETag
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: updateDoctorBookingWindow
+      summary: Replace an unused working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorBookingWindowWrite'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+    delete:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: deleteDoctorBookingWindow
+      summary: Delete an unused working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      responses:
+        '204':
+          description: Deleted unused working window
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
 components:
   parameters:
+    DoctorId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BookingWindowId:
+      name: windowId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     AppointmentId:
       name: id
       in: path
@@ -896,6 +1943,21 @@ components:
       schema:
         type: string
         example: '"3"'
+    PackageId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    PackageIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag from the latest GET or write response.
+      schema:
+        type: string
+        example: '"1"'
 
   headers:
     ServiceETag:
@@ -903,6 +1965,11 @@ components:
       schema:
         type: string
         example: '"3"'
+    PackageETag:
+      description: Strong version tag to send in If-Match.
+      schema:
+        type: string
+        example: '"1"'
 
   responses:
     AppointmentSaved:
@@ -959,6 +2026,27 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/ProblemDetails'
+    AdminPackageSaved:
+      description: The package and its strong ETag
+      headers:
+        ETag:
+          $ref: '#/components/headers/PackageETag'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminPackageWrapper'
+    PackageNotFound:
+      description: Unknown or inactive package slug (public), or unknown package id (admin) (PACKAGE_NOT_FOUND)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    PackageValidationError:
+      description: Invalid field, duplicate languageCode, or bad includedServiceIds (VALIDATION_ERROR)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
 
   securitySchemes:
     BearerAuth:
@@ -969,6 +2057,81 @@ components:
 
 
   schemas:
+
+    DoctorWrite:
+      type: object
+      required: [fullName, status, sortOrder]
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Dr. Sok
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        sortOrder:
+          type: integer
+          minimum: 0
+
+    ManagedDoctor:
+      allOf:
+        - $ref: '#/components/schemas/DoctorWrite'
+        - type: object
+          required: [id, version, createdAt, updatedAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              format: int64
+              minimum: 0
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    DoctorBookingWindowWrite:
+      type: object
+      required: [serviceId, date, startTime, endTime]
+      description: Active doctor/service; within booking date window; duration plus buffer must fit. Same-service working windows cannot overlap. Used windows are immutable.
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          example: '2026-11-21'
+        startTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '14:00'
+        endTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '17:00'
+
+    DoctorBookingWindow:
+      allOf:
+        - $ref: '#/components/schemas/DoctorBookingWindowWrite'
+        - type: object
+          required: [id, doctorId, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            doctorId:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              format: int64
+              minimum: 0
+
     LanguageCode:
       type: string
       enum: [km, en, zh]
@@ -1062,10 +2225,9 @@ components:
         - name
         - shortDescription
         - durationMinutes
-        - priceUsd
-        - originalPriceUsd
         - imageUrl
         - imageAltText
+      description: No price fields in public responses (PC-01, November 19, 2026).
       properties:
         id:
           type: string
@@ -1095,17 +2257,6 @@ components:
           minimum: 5
           maximum: 480
           example: 60
-        priceUsd:
-          type: [number, 'null']
-          minimum: 0
-          multipleOf: 0.01
-          description: US dollars. Null means ask the clinic for the price.
-          example: 450.00
-        originalPriceUsd:
-          type: [number, 'null']
-          multipleOf: 0.01
-          description: Price before a promotion. Only set when priceUsd is set, and greater than it.
-          example: null
         imageUrl:
           type: [string, 'null']
           format: uri
@@ -1126,9 +2277,447 @@ components:
           items:
             $ref: '#/components/schemas/PublicService'
 
+    PublicDoctorSummary:
+      type: object
+      required: [slug, fullName, title, imageUrl, imageAltText]
+      properties:
+        slug:
+          type: string
+          example: dr-sok
+        fullName:
+          type: string
+          example: Dr. Sok
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Gastroenterologist
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+          description: Phase 2; null until doctor photos are supported.
+        imageAltText:
+          type: [string, 'null']
+          maxLength: 200
+
+    PublicServiceDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicService'
+        - type: object
+          required: [description, preparation, doctors]
+          properties:
+            description:
+              type: string
+              minLength: 1
+              maxLength: 5000
+            preparation:
+              type: [string, 'null']
+              maxLength: 3000
+              description: Null when no preparation is needed.
+            doctors:
+              type: array
+              description: Linked public doctors (PC-06). Information only; reception assigns the doctor.
+              items:
+                $ref: '#/components/schemas/PublicDoctorSummary'
+
+    PublicServiceDetailWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicServiceDetail'
+
+    PublicDoctor:
+      allOf:
+        - $ref: '#/components/schemas/PublicDoctorSummary'
+        - type: object
+          required: [serviceSlugs]
+          properties:
+            serviceSlugs:
+              type: array
+              items:
+                type: string
+
+    PublicDoctorListWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicDoctor'
+
+    PublicDoctorDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicDoctor'
+        - type: object
+          required: [bio, services]
+          properties:
+            bio:
+              type: [string, 'null']
+              maxLength: 3000
+            services:
+              type: array
+              items:
+                type: object
+                required: [slug, name, shortDescription]
+                properties:
+                  slug:
+                    type: string
+                  name:
+                    type: string
+                  shortDescription:
+                    type: string
+
+    PublicDoctorDetailWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicDoctorDetail'
+
+    DoctorProfileWrite:
+      type: object
+      required: [slug, translations]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          minLength: 1
+          maxLength: 80
+        translations:
+          type: array
+          minItems: 3
+          maxItems: 3
+          description: Exactly one entry each for km, en and zh.
+          items:
+            type: object
+            required: [languageCode, title, bio]
+            properties:
+              languageCode:
+                $ref: '#/components/schemas/LanguageCode'
+              title:
+                type: string
+                minLength: 1
+                maxLength: 120
+              bio:
+                type: [string, 'null']
+                minLength: 1
+                maxLength: 3000
+
+    DoctorProfileWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          allOf:
+            - $ref: '#/components/schemas/DoctorProfileWrite'
+            - type: object
+              required: [doctorId, serviceIds, version]
+              properties:
+                doctorId:
+                  type: string
+                  format: uuid
+                serviceIds:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                version:
+                  type: integer
+                  format: int64
+
+    ServiceDoctorsWrite:
+      type: object
+      required: [doctorIds]
+      properties:
+        doctorIds:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items:
+            type: string
+            format: uuid
+
+    ServiceDoctorsWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [serviceId, doctorIds]
+          properties:
+            serviceId:
+              type: string
+              format: uuid
+            doctorIds:
+              type: array
+              items:
+                type: string
+                format: uuid
+
     ServiceStatus:
       type: string
       enum: [ACTIVE, INACTIVE]
+
+    PublicPackage:
+      type: object
+      required:
+        - id
+        - slug
+        - name
+        - shortDescription
+        - priceUsd
+        - originalPriceUsd
+        - durationMinutes
+        - imageUrl
+        - imageAltText
+        - includedServiceSlugs
+      description: PK-02, PK-06, November 19, 2026. No bufferMinutes, status or sortOrder.
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Send as packageId when booking.
+        slug:
+          type: string
+          example: annual-health-check
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        shortDescription:
+          type: string
+          minLength: 1
+          maxLength: 300
+        priceUsd:
+          type: number
+          minimum: 0
+          multipleOf: 0.01
+          example: 120.00
+        originalPriceUsd:
+          type: [number, 'null']
+          multipleOf: 0.01
+          description: Price before a promotion, shown crossed out. Greater than priceUsd.
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+          description: Phase 2 (PK-11); null until package images are supported.
+        imageAltText:
+          type: [string, 'null']
+          maxLength: 200
+        includedServiceSlugs:
+          type: array
+          description: ACTIVE included services, in package order (PK-04).
+          items:
+            type: string
+
+    PublicPackageListWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/PublicPackage'
+
+    PublicPackageIncludedService:
+      type: object
+      required: [slug, name, shortDescription]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        shortDescription:
+          type: string
+
+    PublicPackageDetail:
+      allOf:
+        - $ref: '#/components/schemas/PublicPackage'
+        - type: object
+          required: [description, preparation, includedServices, exclusions]
+          properties:
+            description:
+              type: string
+              minLength: 1
+              maxLength: 5000
+            preparation:
+              type: [string, 'null']
+              maxLength: 3000
+              description: Null when no preparation is needed.
+            includedServices:
+              type: array
+              items:
+                $ref: '#/components/schemas/PublicPackageIncludedService'
+            exclusions:
+              type: array
+              maxItems: 20
+              items:
+                type: string
+                minLength: 1
+                maxLength: 200
+
+    PublicPackageDetailWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicPackageDetail'
+
+    AdminPackageText:
+      type: object
+      required: [languageCode, name, shortDescription, description, preparation, exclusions]
+      properties:
+        languageCode:
+          $ref: '#/components/schemas/LanguageCode'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        shortDescription:
+          type: string
+          minLength: 1
+          maxLength: 300
+        description:
+          type: string
+          minLength: 1
+          maxLength: 5000
+        preparation:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 3000
+        exclusions:
+          type: array
+          maxItems: 20
+          items:
+            type: string
+            minLength: 1
+            maxLength: 200
+
+    AdminPackageWrite:
+      type: object
+      required: [slug, priceUsd, originalPriceUsd, durationMinutes, bufferMinutes, sortOrder, includedServiceIds]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          minLength: 1
+          maxLength: 80
+        priceUsd:
+          type: number
+          minimum: 0
+          multipleOf: 0.01
+        originalPriceUsd:
+          type: [number, 'null']
+          multipleOf: 0.01
+          description: Null, or greater than priceUsd.
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+        bufferMinutes:
+          type: integer
+          minimum: 0
+          maximum: 60
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        includedServiceIds:
+          type: array
+          minItems: 1
+          maxItems: 30
+          uniqueItems: true
+          description: Existing services (ACTIVE or INACTIVE), in display order (PK-04).
+          items:
+            type: string
+            format: uuid
+        translations:
+          type: array
+          maxItems: 3
+          description: Each languageCode at most once. On PUT, languages not sent keep their saved text.
+          items:
+            $ref: '#/components/schemas/AdminPackageText'
+
+    AdminPackage:
+      type: object
+      required:
+        - id
+        - slug
+        - status
+        - priceUsd
+        - originalPriceUsd
+        - durationMinutes
+        - bufferMinutes
+        - sortOrder
+        - includedServiceIds
+        - imageUrl
+        - updatedAt
+        - version
+        - translations
+        - missingLanguages
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        status:
+          $ref: '#/components/schemas/ServiceStatus'
+        priceUsd:
+          type: number
+        originalPriceUsd:
+          type: [number, 'null']
+        durationMinutes:
+          type: integer
+        bufferMinutes:
+          type: integer
+        sortOrder:
+          type: integer
+        includedServiceIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        imageUrl:
+          type: [string, 'null']
+          format: uri
+        updatedAt:
+          type: string
+          format: date-time
+        version:
+          type: integer
+          description: Same value as the ETag, without quotes.
+        translations:
+          type: array
+          description: Saved languages, ordered km, en, zh.
+          items:
+            $ref: '#/components/schemas/AdminPackageText'
+        missingLanguages:
+          type: array
+          items:
+            $ref: '#/components/schemas/LanguageCode'
+
+    AdminPackageWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminPackage'
+
+    AdminPackageListWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminPackage'
 
     AdminServiceText:
       type: object
@@ -1144,6 +2733,16 @@ components:
           type: string
           minLength: 1
           maxLength: 300
+        description:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 5000
+          description: PC-03. Required in every language before an ACTIVE service can be saved or activated.
+        preparation:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 3000
+          description: PC-03. Null when no preparation is needed.
         imageAltText:
           type: [string, 'null']
           maxLength: 200
@@ -1326,13 +2925,66 @@ components:
         available:
           type: boolean
 
+    BookingSlot:
+      type: object
+      required: [startAt, endAt]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          example: '2026-11-20T14:00:00+07:00'
+        endAt:
+          type: string
+          format: date-time
+          description: Service end; availability also accounts for the buffer after this time.
+          example: '2026-11-20T14:30:00+07:00'
+
+    BookingSlots:
+      type: object
+      required: [date, timeZone, slots]
+      properties:
+        date:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          const: Asia/Phnom_Penh
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSlot'
+
     BookingRequest:
       type: object
-      required: [serviceId, preferredDate, preferredPeriod, language, patient]
+      required: [preferredDate, language, patient]
+      description: |
+        Exactly one of serviceId or packageId (PK-07), and exactly one of preferredPeriod or
+        preferredStartTime. Package requests must use preferredPeriod.
+      allOf:
+        - oneOf:
+            - required: [serviceId]
+              not:
+                required: [packageId]
+            - required: [packageId, preferredPeriod]
+              not:
+                anyOf:
+                  - required: [serviceId]
+                  - required: [preferredStartTime]
+        - oneOf:
+            - required: [preferredPeriod]
+              not:
+                required: [preferredStartTime]
+            - required: [preferredStartTime]
+              not:
+                required: [preferredPeriod]
       properties:
         serviceId:
           type: string
           format: uuid
+        packageId:
+          type: string
+          format: uuid
+          description: An ACTIVE package's id (PK-07).
         preferredDate:
           type: string
           format: date
@@ -1340,6 +2992,11 @@ components:
         preferredPeriod:
           type: string
           example: MORNING
+        preferredStartTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Exact requested start, HH:mm in Asia/Phnom_Penh. Omit preferredPeriod.
+          example: '14:30'
         language:
           $ref: '#/components/schemas/LanguageCode'
         patient:
@@ -1379,6 +3036,11 @@ components:
           type: string
           example: MORNING
 
+        preferredStartTime:
+          type: [string, 'null']
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Original exact request in clinic time; null for legacy period requests.
+
     AppointmentListItem:
       type: object
       properties:
@@ -1395,9 +3057,20 @@ components:
         patientPhone:
           type: string
           example: '+85512345678'
-        serviceName:
+        bookingType:
           type: string
-          description: In English, the staff language.
+          enum: [SERVICE, PACKAGE]
+          description: PK-10.
+        serviceName:
+          type: [string, 'null']
+          description: In English, the staff language. Null for package appointments.
+        packageId:
+          type: [string, 'null']
+          format: uuid
+          description: Null for service appointments (PK-10).
+        packageName:
+          type: [string, 'null']
+          description: In English. Null for service appointments (PK-10).
         preferredDate:
           type: string
           format: date
@@ -1413,14 +3086,20 @@ components:
           type: string
           format: date-time
 
+        preferredStartTime:
+          type: [string, 'null']
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Original exact request in clinic time; null for legacy period requests.
+
     AppointmentDetail:
       allOf:
         - $ref: '#/components/schemas/AppointmentListItem'
         - type: object
           properties:
             serviceId:
-              type: string
+              type: [string, 'null']
               format: uuid
+              description: Null for package appointments (PK-10).
             patientEmail:
               type: [string, 'null']
             language:

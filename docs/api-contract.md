@@ -421,7 +421,7 @@ database rather than the website's bundled data.
 | SV-03 | Missing language | Not possible for an active service. The list never falls back to another language (I18N-02). |
 | SV-04 | Paging and filters | None. The catalogue is small, so the endpoint returns every active service in one response. |
 | SV-05 | Order | Category `sortOrder`, then service `sortOrder`, then `slug`. |
-| SV-06 | Price | Informational only, in US dollars. `priceUsd: null` means the website shows "ask the clinic". Booking never charges the patient. |
+| SV-06 | Price | Informational only, in US dollars. `priceUsd: null` means the website shows "ask the clinic". Booking never charges the patient. **Public price removed by PC-01 (November 19, 2026).** |
 | SV-07 | Admin-only fields | `bufferMinutes`, `status` and `sortOrder` are never returned publicly. |
 
 ### Route
@@ -496,7 +496,7 @@ Errors use the CMS problem-details body. See [OpenAPI specification](openapi.yam
 | ID | Question | Decision |
 | --- | --- | --- |
 | SV-08 | Category filter? | None. The booking form groups by `categorySlug` on the client. |
-| SV-09 | Detail-page fields (overview, FAQs, procedure) | Stay as bundled website content. The API covers card and booking data only. |
+| SV-09 | Detail-page fields (overview, FAQs, procedure) | Stay as bundled website content. The API covers card and booking data only. **`description` and `preparation` moved to the API by PC-02 (November 19, 2026).** |
 | SV-10 | Seeded images | Not seeded. Seeded services have `imageUrl: null` and `imageAltText: null`; the website keeps its own images by `slug` until the service editor uploads them to R2. |
 
 ## Admin service editing (phase 1) — approved November 18, 2026
@@ -748,7 +748,7 @@ contract that lets the patient booking form and the reception dashboard use them
 | AP-03 | Duplicate submits | `POST /public/appointments` requires an `Idempotency-Key` header (a UUID from the form). A repeat with the same key and body returns the first response; the same key with a different body returns `409 IDEMPOTENCY_CONFLICT`. Keys are kept for 24 hours. |
 | AP-04 | Patient identity | Patients are matched by phone number, normalised to E.164 (`012 345 678` → `+85512345678`). Each appointment keeps the name and phone as submitted, so a later booking never changes an earlier one. |
 | AP-05 | Patient fields | `fullName` (1–120) and `phone` required; `email` optional (the current form collects it); `notes` optional, up to 500 characters; `language` required (`km`, `en`, `zh`) for later patient messages. |
-| AP-06 | Preferred doctor | Not in the MVP. Reception chooses the doctor when confirming (BK-02), so the public doctor list (draft endpoint 2) is not needed for launch. |
+| AP-06 | Preferred doctor | Not in the MVP. Reception chooses the doctor when confirming (BK-02), so the public doctor list (draft endpoint 2) is not needed for launch. **Public doctor profiles added by PC-04 (November 19, 2026); patients still do not choose a doctor.** |
 | AP-07 | Who uses the admin routes | Keycloak `ADMIN` and `RECEPTION`, both with the same access to every route in this section. |
 | AP-08 | Concurrent staff edits | Detail responses carry a strong `ETag` (`"<version>"`). Every `PATCH` requires `If-Match`; a stale value returns `412 VERSION_MISMATCH`, a missing one `428 VERSION_REQUIRED`. Same as banner and service editing. |
 | AP-09 | Status history | Every status change writes one history row (who, when, from, to, reason) in the same transaction. Reception can read it per appointment. |
@@ -951,3 +951,550 @@ The approved booking-period acceptance cases still apply. In addition:
 | `arrive` on a `PENDING` request | `409 INVALID_TRANSITION` |
 | Full visit: confirm, arrive, start, complete | Each `200`; history has five rows in order |
 | Sixth booking from one IP within 10 minutes | `429 RATE_LIMITED` |
+
+
+## Exact-time booking - implementation revision, November 19, 2026
+
+Requested by the user for the Spring Boot backend; prepared for coordinated PR
+review. This extends BK-01/BK-02/AP-11 for exact requests. Legacy period requests
+remain supported. Roles, receptionist approval and visit transitions stay unchanged.
+See [design background](proposals/exact-time-booking.md).
+
+### Public availability
+
+Add `GET /api/v1/public/booking-slots?date=2026-11-20&serviceId=<uuid>`.
+Both query parameters are required. Responses use `Cache-Control: no-store`.
+An invalid/out-of-window date returns `400 VALIDATION_ERROR`; an inactive/unknown
+service returns `404 SERVICE_NOT_FOUND`. The booking window uses clinic time.
+
+```json
+{
+  "data": {
+    "date": "2026-11-20",
+    "timeZone": "Asia/Phnom_Penh",
+    "slots": [
+      { "startAt": "2026-11-20T14:00:00+07:00", "endAt": "2026-11-20T14:30:00+07:00" }
+    ]
+  }
+}
+```
+
+Return available starts only, sorted and deduplicated across doctors. Starts are
+on clinic-local `:00` or `:30` boundaries, strictly in the future. The grid does
+not change service duration or buffer. `endAt` excludes buffer; availability
+includes it. The example assumes a 30-minute service. Expose no doctor IDs,
+patient information or internal reservation details.
+
+Offer a start only if an active doctor has a verified service/date working window,
+the full duration plus buffer fits in that window and one booking period, the doctor
+has no overlapping pending exact reservation or confirmed/later visit, and period
+capacity permits it. Legacy pending period-only requests across **all services**
+block exact starts for the same date/period until reception resolves them. New
+legacy requests can make exact availability disappear until resolved.
+Missing schedules or no remaining availability returns `slots: []`.
+
+### Public submission
+
+Extend `POST /api/v1/public/appointments` with `preferredStartTime`, an optional
+`HH:mm` string on the 30-minute grid, for example `"14:30"`. Require exactly one
+non-null selector: `preferredPeriod` or `preferredStartTime`. Omit the unused
+selector (null is also accepted). Empty period strings are invalid. The server
+derives `preferredPeriod` for exact requests. `preferredDate` and all existing
+patient, language, rate-limit, booking-window and idempotency rules still apply.
+
+```json
+{
+  "serviceId": "3f1c2a7e-0b5d-4b8e-9a51-3c0d2e7f9a10",
+  "preferredDate": "2026-11-20",
+  "preferredStartTime": "14:30",
+  "language": "en",
+  "patient": { "fullName": "Sok Dara", "phone": "012 345 678", "email": null },
+  "notes": null
+}
+```
+
+Creation still returns `201` with `status: PENDING`, date, derived period, reference
+and ID. Add nullable `preferredStartTime` to public creation and admin list/detail
+responses: `"14:30"` for an exact request, `null` for legacy bookings. Requested
+date/period/start are immutable. Confirmed doctor/times remain unset until approval.
+
+Exact submission atomically reserves one eligible doctor interval including buffer.
+Availability is a hint; repeat every check during submission. Add
+`409 SLOT_UNAVAILABLE` for past starts, missing/free doctor windows or unresolved
+legacy pending requests. Invalid grid/selectors or an interval that cannot fit
+inside a period return `400 VALIDATION_ERROR`. Aggregate exhaustion retains
+`409 PERIOD_FULL`. Failure creates no appointment or reservation. Idempotency
+includes the selected start; a used key with a different time conflicts.
+
+### Reception, concurrency and scheduling data
+
+The confirm body and ETag requirements remain unchanged. For exact requests,
+reception must choose a verified doctor/service/date window fitting duration
+(including overrides) and buffer; missing windows return `409 SLOT_UNAVAILABLE`.
+Reception can change time/doctor while preserving the patient's original request.
+Overlaps return `409 DOCTOR_UNAVAILABLE`. Recheck target period capacity on confirm,
+subtracting the existing pending booking when the target date/period is unchanged;
+exhaustion returns `409 PERIOD_FULL`. Failed confirmation preserves its reservation.
+
+One PostgreSQL exclusion constraint covers pending reservations and confirmed/later
+visits, including completed visits and turnover buffers. Confirmation transfers the
+reservation atomically; rejection releases it in the status/history transaction.
+No expiration, cancellation or new lifecycle rules are introduced.
+Booking locks its idempotency key before its date/period capacity key. Confirmation
+locks the appointment, then source/target date-period keys in lexical order. Exact
+allocation and confirmation hold shared locks on schedule and doctor rows.
+
+`clinic.doctor_booking_window` stores `id`, `doctor_id`, `service_id`, `day`,
+`start_time`, `end_time`, all times clinic-local. Each row is a verified window for
+one doctor/service/date. Represent breaks with separate windows and absences with
+no windows. Supply clinic-verified data through the Doctor and schedule management
+API revision below (or reviewed seed migrations). Referenced
+windows cannot be updated or deleted, including after rejection, for auditability.
+
+V9 seeds no real doctor schedules. Do not use the reference date, selected 4:30 pm,
+or its 2:00-5:00 pm times as clinic configuration. Current placeholder periods close
+at 17:00, so positive-duration appointments cannot start at 17:00. Exact starts
+appear only after verified data is configured and legacy pending requests resolved.
+
+Roll out the backend additively; enable the frontend exact-time selector after the
+backend and real schedule data are ready. Submit coordinated PRs in both repositories
+and sync API contract/OpenAPI copies. Frontend UI implementation is a separate task.
+
+
+## Doctor and schedule management - implementation revision, November 19, 2026
+
+Requested by the user to configure doctors and expose live booking slots without SQL.
+Prepared for coordinated PR review. Extends AP-16 and the exact-time revision;
+roles and appointment transitions are unchanged. No doctor login is introduced.
+
+All new routes below require Clinic Admin (`ADMIN`). Existing
+`GET /api/v1/admin/doctors` remains available to ADMIN/RECEPTION and returns only
+active `{id, fullName}` records without changing its response shape.
+
+| Method | Route under `/api/v1/admin/doctors` | Purpose |
+| --- | --- | --- |
+| GET | `/manage` | Full doctor list, including inactive resources |
+| POST | (base) | Create doctor |
+| GET | `/{id}` | Doctor detail with ETag |
+| PUT | `/{id}` | Replace name/status/display order; If-Match required |
+| GET | `/{id}/booking-windows?from=&to=&serviceId=` | Working windows in inclusive required date range (maximum 62 days); optional service filter |
+| POST | `/{id}/booking-windows` | Create dated service working window |
+| GET | `/{id}/booking-windows/{windowId}` | Window detail with ETag |
+| PUT | `/{id}/booking-windows/{windowId}` | Replace unused window; If-Match required |
+| DELETE | `/{id}/booking-windows/{windowId}` | Delete unused window; If-Match required |
+
+Doctor create/update body: `{ "fullName": "Dr. Sok", "status": "ACTIVE", "sortOrder": 0 }`.
+All fields required; name trimmed, 1-120 characters; status ACTIVE/INACTIVE;
+sortOrder integer >= 0. Response: `{data:{id,fullName,status,sortOrder,version,
+createdAt,updatedAt}}`, with timestamps in GMT+7. `/manage` returns `{data:[...]}`
+in display/name/id order. No doctor hard-delete route; set status INACTIVE.
+
+Working-window body: `{ "serviceId": "<uuid>", "date": "2026-11-21",
+"startTime": "14:00", "endTime": "17:00" }`. All fields required. Times are
+strict HH:mm in Asia/Phnom_Penh and end must follow start. Date must be within
+the configured public booking window, including today. Doctor and service must
+be active for create/update. Window must fit at least one service duration plus
+buffer. Overlapping windows for the same doctor/service/date are rejected;
+windows for different services may overlap because appointment reservations
+still enforce actual doctor availability. Represent breaks with separate windows.
+Response adds `id`, `doctorId`, `version`; singular reads/writes return `{data:...}`,
+lists `{data:[...]}`. Create returns 201 with Location and ETag; successful PUT
+returns 200 with new ETag; DELETE returns 204. All responses use no-store.
+
+PUT/DELETE require a strong numeric If-Match (`"0"`); missing header returns
+428 VERSION_REQUIRED, malformed or stale value 412 VERSION_MISMATCH. Unknown
+resources return 404 DOCTOR_NOT_FOUND / BOOKING_WINDOW_NOT_FOUND; inactive service
+returns 404 SERVICE_NOT_FOUND. Bad input/ranges return 400 VALIDATION_ERROR.
+409 BOOKING_WINDOW_OVERLAP rejects duplicate/overlapping windows.
+409 SCHEDULE_IN_USE rejects changing/deleting any window referenced by a booking
+(including rejected bookings, for auditability), or covering a confirmed/later
+visit for this doctor/service. 409 DOCTOR_IN_USE blocks deactivation while the
+doctor has a pending exact reservation, an arrived/in-progress visit, or a
+confirmed/completed appointment whose occupied interval has not yet ended.
+No appointment is moved or cancelled by these operations.
+
+Doctor-row locks precede window-row locks. Booking/confirmation holds shared doctor
+locks; management writes hold exclusive doctor locks, so deactivation and window
+edits cannot race with reservations. Same-doctor window edits serialize overlap
+checks; ETags prevent lost updates. Database triggers also protect used windows.
+Real doctors/hours are provided by the clinic; no fictitious schedules are seeded.
+
+
+## Public catalogue: prices, doctor profiles and service details - revision, November 19, 2026
+
+Requested by the user to match the clinic's business rules. Prepared for coordinated
+PR review in both repositories. Roles, appointment and visit transitions, and
+receptionist approval are unchanged. No doctor login is introduced.
+
+### Business rules
+
+- Services are listed **without prices**. Prices belong to packages, which get their own
+  contract later.
+- Doctors have public profiles and are linked to the services they perform.
+- A service detail page shows its description, preparation and related doctors.
+- Patients still never choose a doctor. The receptionist assigns one on confirm (BK-02).
+  Related doctors are information only.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| PC-01 | Public price | **Supersedes SV-06 for public responses.** `GET /public/services` and `GET /public/services/{slug}` return no `priceUsd` or `originalPriceUsd`. The booking form shows no price. The admin service fields (SA-02) stay, unchanged, for internal use. |
+| PC-02 | Service detail | **Supersedes SV-09** for `description` and `preparation`. Overview text, FAQs and procedure steps stay as bundled website content by `slug`. |
+| PC-03 | Detail text | Each service translation adds `description` (1–5000 characters, required for an `ACTIVE` service) and `preparation` (1–3000 characters, or `null` when nothing is needed). Plain text; blank lines separate paragraphs. |
+| PC-04 | Public doctors | **Supersedes AP-06 where it says the public doctor list is not needed.** Only `ACTIVE` doctors with a `slug` and a profile in all three languages are public (I18N-01, I18N-02: no fallback). |
+| PC-05 | Doctor profile | Each doctor adds a unique `slug` and, per language, `title` (for example "Gastroenterologist", 1–120 characters) and `bio` (1–3000 characters, or `null`). `fullName` stays one value for all languages. A doctor photo uses the service image rules (signed R2 URL, five minutes) and is phase 2; until then `imageUrl` and `imageAltText` are `null`. |
+| PC-06 | Service–doctor link | Many-to-many table `service_doctor (service_id, doctor_id)`, both `ON DELETE RESTRICT`. Public responses include only links where both sides are public. A link does not create booking windows or restrict which doctor reception assigns. |
+| PC-07 | Who edits | `ADMIN` only, through the routes below. |
+| PC-08 | Order | Doctors: `sortOrder`, then `fullName`, then `id`. Services in a doctor profile: SV-05 order. |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/public/services?lang= | Public (changed: no price fields) |
+| GET | /api/v1/public/services/{slug}?lang= | Public (new) |
+| GET | /api/v1/public/doctors?lang= | Public (new) |
+| GET | /api/v1/public/doctors/{slug}?lang= | Public (new) |
+| PUT | /api/v1/admin/doctors/{id}/profile | ADMIN, `If-Match` required (new) |
+| PUT | /api/v1/admin/services/{id}/doctors | ADMIN, `If-Match` required (new) |
+
+All public routes require `lang`, return `Content-Language` and `Cache-Control: no-store`,
+like the service list.
+
+### `GET /api/v1/public/services?lang=km`
+
+Unchanged except that `priceUsd` and `originalPriceUsd` are removed from every item.
+
+### `GET /api/v1/public/services/{slug}?lang=en`
+
+```json
+{
+  "data": {
+    "id": "3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d01",
+    "slug": "colonoscopy",
+    "categorySlug": "digestive-health",
+    "categoryName": "Digestive Health",
+    "name": "Colonoscopy",
+    "shortDescription": "Camera examination of the large intestine.",
+    "description": "A colonoscopy lets the doctor see the lining of the large intestine.",
+    "preparation": "Eat a light diet the day before. Do not eat for 8 hours before the visit.",
+    "durationMinutes": 60,
+    "imageUrl": null,
+    "imageAltText": null,
+    "doctors": [
+      {
+        "slug": "dr-sok",
+        "fullName": "Dr. Sok",
+        "title": "Gastroenterologist",
+        "imageUrl": null,
+        "imageAltText": null
+      }
+    ]
+  }
+}
+```
+
+- `doctors` is always an array, `[]` when no public doctor is linked.
+- Every field is present; optional values are `null`, never omitted.
+- No `priceUsd`, `originalPriceUsd`, `bufferMinutes`, `status` or `sortOrder`.
+
+### `GET /api/v1/public/doctors?lang=en`
+
+```json
+{
+  "data": [
+    {
+      "slug": "dr-sok",
+      "fullName": "Dr. Sok",
+      "title": "Gastroenterologist",
+      "imageUrl": null,
+      "imageAltText": null,
+      "serviceSlugs": ["colonoscopy", "gastroscopy"]
+    }
+  ]
+}
+```
+
+`data` is `[]` when there are no public doctors. A doctor's `id` is never returned publicly.
+
+### `GET /api/v1/public/doctors/{slug}?lang=en`
+
+Returns the list item plus `bio` (string or `null`) and `services`, an array of
+`{ slug, name, shortDescription }` in `lang` for the linked active services.
+
+### `PUT /api/v1/admin/doctors/{id}/profile`
+
+```json
+{
+  "slug": "dr-sok",
+  "translations": [
+    { "languageCode": "km", "title": "…", "bio": null },
+    { "languageCode": "en", "title": "Gastroenterologist", "bio": "Dr. Sok has…" },
+    { "languageCode": "zh", "title": "…", "bio": null }
+  ]
+}
+```
+
+- `slug`: lowercase letters, digits and hyphens, 1–80 characters, unique among doctors.
+- `translations`: exactly one entry for each of `km`, `en` and `zh`.
+- Response `200` with the profile, `serviceIds` and a new `ETag`; the doctor's `version` increases.
+
+### `PUT /api/v1/admin/services/{id}/doctors`
+
+Body `{ "doctorIds": ["9a7e…"] }` replaces the service's linked doctors. IDs must be
+distinct existing doctors (`ACTIVE` or `INACTIVE`), at most 50. `[]` removes every link.
+Response `200` with `{ "data": { "serviceId", "doctorIds" } }` and the service's new `ETag`.
+
+Admin service text (`PUT /admin/services/{id}`, SA-02) adds `description` and `preparation`
+to each translation, with the PC-03 rules. Activating a service requires `description`
+in all three languages, otherwise `409 SERVICE_TRANSLATION_MISSING`.
+
+### Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Bad `lang`, slug or text length; duplicate or missing language; too many or duplicate `doctorIds` |
+| 404 | `SERVICE_NOT_FOUND` | Unknown or inactive service slug (public); unknown service id (admin) |
+| 404 | `DOCTOR_NOT_FOUND` | Unknown or non-public doctor slug (public); unknown doctor id (admin, including in `doctorIds`) |
+| 409 | `DOCTOR_SLUG_TAKEN` | Another doctor has the slug |
+| 412 / 428 | `VERSION_MISMATCH` / `VERSION_REQUIRED` | As for other admin edits |
+
+### Migration
+
+- Flyway adds `doctor.slug` (nullable, unique), `doctor_translation`, `service_doctor`, and
+  `description` / `preparation` on `service_translation`.
+- Seeded services get `description` from the website's current overview text so they stay
+  active. `preparation` starts as `null`.
+- Existing doctors stay non-public until an admin saves a profile.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| `GET /public/services?lang=en` | `200`; no item has `priceUsd` or `originalPriceUsd` |
+| `GET /public/services/colonoscopy?lang=km` with two linked public doctors and one inactive | `200`; two doctors, Khmer `title` |
+| Service with no linked doctors | `200`; `"doctors": []` |
+| Inactive service slug | `404 SERVICE_NOT_FOUND` |
+| Doctor without a `zh` profile | Not in any list; detail returns `404 DOCTOR_NOT_FOUND` |
+| Inactive doctor with a profile | Not public; links kept |
+| Two doctors saved with the same slug | Second gets `409 DOCTOR_SLUG_TAKEN` |
+| Link a doctor, then book the service | Booking is unchanged; reception may still assign any active doctor |
+| Activate a service missing `description` in `en` | `409 SERVICE_TRANSLATION_MISSING` |
+
+### Open questions for the Team Lead
+
+1. Should the booking form say "price on request" or show nothing? This revision shows nothing.
+2. Should related doctors limit which doctors reception may assign on confirm? This revision says no.
+
+
+## Packages and package booking - revision, November 19, 2026
+
+Requested by the user to complete the clinic's catalogue rules. Prepared for coordinated
+PR review in both repositories. Builds on the public catalogue revision (PC-01: services
+carry no public price; prices belong to packages). Roles, appointment and visit
+transitions, and receptionist approval are unchanged. No doctor login is introduced.
+
+### Business rules
+
+- A package shows its price, included services, exclusions and preparation.
+- One booking request names **one service or one package** and creates **one** `PENDING`
+  appointment for receptionist review.
+- A package visit is one appointment. Its length is the package's own `durationMinutes`
+  plus `bufferMinutes`, set by the clinic, not the sum of the included services.
+- The receptionist assigns one doctor on confirm, as for services (BK-02).
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| PK-01 | Package data | New tables `package`, `package_translation` and `package_service`. Packages are created and edited by `ADMIN` through the routes below; there is no seed. A new package starts `INACTIVE`. |
+| PK-02 | Price | `priceUsd` is required, US dollars, two decimals, `≥ 0`. `originalPriceUsd` is `null` or greater than `priceUsd`, shown crossed out. Informational only; booking never charges the patient (SV-06). |
+| PK-03 | Duration and buffer | `durationMinutes` 5–480 and `bufferMinutes` 0–60, as for services (BK-05). The appointment copies both when created; later package edits do not change existing appointments (BK-07). |
+| PK-04 | Included services | 1–30 distinct services in display order, stored in `package_service (package_id, service_id, sort_order)`, both `ON DELETE RESTRICT`. Inclusion is descriptive: it does not create extra appointments, booking windows or capacity use. Public responses list only `ACTIVE` included services. |
+| PK-05 | Text | Per language: `name` 1–120, `shortDescription` 1–300, `description` 1–5000, `preparation` `null` or 1–3000, `exclusions` 0–20 items of 1–200 characters each. Plain text; blank lines separate paragraphs. |
+| PK-06 | Public visibility | `ACTIVE` packages only. An active package has all three languages and at least one active included service (I18N-01, I18N-02: no fallback). |
+| PK-07 | Booking selector | `POST /public/appointments` takes exactly one of `serviceId` or `packageId`. Package requests use `preferredPeriod`; `preferredStartTime` with `packageId` is `400 VALIDATION_ERROR` until package booking windows exist. |
+| PK-08 | Capacity | The BK capacity rule applies unchanged, using the package's `durationMinutes + bufferMinutes`. |
+| PK-09 | Confirm | Same body and rules as a period service request: reception picks doctor, date and time, may override `durationMinutes` (BK-06), and the whole visit plus buffer must fit one period. No doctor booking window is required. Doctor overlap still returns `409 DOCTOR_UNAVAILABLE`. |
+| PK-10 | Appointment fields | Appointments store either `service_id` or `package_id` (a check constraint enforces exactly one). Admin list and detail add `bookingType` (`SERVICE` or `PACKAGE`), `packageId` and `packageName`. For package appointments `serviceId` and `serviceName` are `null`; for service appointments the package fields are `null`. |
+| PK-11 | Images | Package images follow the service image rules and are phase 2. Until then `imageUrl` and `imageAltText` are `null`. |
+| PK-12 | Order | Packages: `sortOrder`, then `slug`. Included services: `package_service.sort_order`. |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/public/packages?lang= | Public (new) |
+| GET | /api/v1/public/packages/{slug}?lang= | Public (new) |
+| GET | /api/v1/public/booking-periods?date=&serviceId= or &packageId= | Public (changed: accepts `packageId`) |
+| POST | /api/v1/public/appointments | Public (changed: accepts `packageId`) |
+| GET | /api/v1/admin/packages | ADMIN (new) |
+| POST | /api/v1/admin/packages | ADMIN (new) |
+| GET | /api/v1/admin/packages/{id} | ADMIN (new) |
+| PUT | /api/v1/admin/packages/{id} | ADMIN, `If-Match` required (new) |
+| PATCH | /api/v1/admin/packages/{id}/activate | ADMIN, `If-Match` required (new) |
+| PATCH | /api/v1/admin/packages/{id}/deactivate | ADMIN, `If-Match` required (new) |
+
+Public routes require `lang`, return `Content-Language` and `Cache-Control: no-store`,
+like the service list.
+
+### `GET /api/v1/public/packages?lang=en`
+
+```json
+{
+  "data": [
+    {
+      "id": "8b2e4f1a-6c3d-4e5f-9a7b-1c2d3e4f5a60",
+      "slug": "annual-health-check",
+      "name": "Annual Health Check",
+      "shortDescription": "Blood tests, chest X-ray and a doctor's review.",
+      "priceUsd": 120.00,
+      "originalPriceUsd": 150.00,
+      "durationMinutes": 120,
+      "imageUrl": null,
+      "imageAltText": null,
+      "includedServiceSlugs": ["blood-test", "chest-x-ray", "general-consultation"]
+    }
+  ]
+}
+```
+
+`data` is `[]` when there are no active packages. `id` is sent as `packageId` when booking.
+
+### `GET /api/v1/public/packages/{slug}?lang=en`
+
+```json
+{
+  "data": {
+    "id": "8b2e4f1a-6c3d-4e5f-9a7b-1c2d3e4f5a60",
+    "slug": "annual-health-check",
+    "name": "Annual Health Check",
+    "shortDescription": "Blood tests, chest X-ray and a doctor's review.",
+    "description": "A yearly check of your general health.",
+    "preparation": "Do not eat for 8 hours before the visit. Bring previous results.",
+    "priceUsd": 120.00,
+    "originalPriceUsd": 150.00,
+    "durationMinutes": 120,
+    "imageUrl": null,
+    "imageAltText": null,
+    "includedServices": [
+      { "slug": "blood-test", "name": "Blood Test", "shortDescription": "Full blood count." },
+      { "slug": "chest-x-ray", "name": "Chest X-ray", "shortDescription": "Image of heart and lungs." }
+    ],
+    "exclusions": ["Specialist follow-up", "Medication"]
+  }
+}
+```
+
+- Every field is present; optional values are `null`, never omitted. `exclusions` is `[]` when empty.
+- No `bufferMinutes`, `status` or `sortOrder` in public responses.
+
+### `GET /api/v1/public/booking-periods?date=2026-11-20&packageId=…`
+
+Unchanged response. Exactly one of `serviceId` or `packageId` is required; both or neither
+is `400 VALIDATION_ERROR`. An unknown or inactive package is `404 PACKAGE_NOT_FOUND`.
+`GET /public/booking-slots` stays service-only.
+
+### `POST /api/v1/public/appointments` with a package
+
+```json
+{
+  "packageId": "8b2e4f1a-6c3d-4e5f-9a7b-1c2d3e4f5a60",
+  "preferredDate": "2026-11-25",
+  "preferredPeriod": "MORNING",
+  "language": "en",
+  "patient": { "fullName": "Sok Dara", "phone": "012 345 678", "email": null },
+  "notes": null
+}
+```
+
+- Exactly one of `serviceId` or `packageId`; otherwise `400 VALIDATION_ERROR`.
+- With `packageId`, `preferredPeriod` is required and `preferredStartTime` is not allowed.
+- `201` with the same `BookingConfirmation` as today, `status: PENDING`.
+- Idempotency, rate limit, booking window and `409 PERIOD_FULL` rules are unchanged; the
+  idempotency body includes `packageId`.
+
+### Admin package body
+
+`POST /admin/packages` and `PUT /admin/packages/{id}`:
+
+```json
+{
+  "slug": "annual-health-check",
+  "priceUsd": 120.00,
+  "originalPriceUsd": 150.00,
+  "durationMinutes": 120,
+  "bufferMinutes": 15,
+  "sortOrder": 10,
+  "includedServiceIds": ["3f1c…", "7a9d…"],
+  "translations": [
+    {
+      "languageCode": "en",
+      "name": "Annual Health Check",
+      "shortDescription": "Blood tests, chest X-ray and a doctor's review.",
+      "description": "A yearly check of your general health.",
+      "preparation": "Do not eat for 8 hours before the visit.",
+      "exclusions": ["Specialist follow-up", "Medication"]
+    }
+  ]
+}
+```
+
+- `slug`: lowercase letters, digits and hyphens, 1–80 characters, unique among packages.
+- `includedServiceIds`: 1–30 distinct existing services (`ACTIVE` or `INACTIVE`), in display order.
+- `translations`: each `languageCode` at most once. On `PUT`, languages not sent keep their
+  saved text; an `ACTIVE` package must still have all three, otherwise `409 TRANSLATION_MISSING`.
+- `POST` returns `201` with `Location`, the package and `ETag: "0"`; the package is `INACTIVE`.
+- `PUT` replaces every other field and returns `200` with a new `ETag`.
+- Admin responses add `id`, `status`, `version`, `updatedAt`, `missingLanguages` and every saved
+  translation, like the admin service (SA-02).
+- `activate` requires all three languages and at least one `ACTIVE` included service, otherwise
+  `409 TRANSLATION_MISSING` or `409 PACKAGE_SERVICES_INACTIVE`. `deactivate` hides the package
+  publicly; existing appointments are unchanged.
+
+### Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Bad `lang`, slug, price, duration, buffer or text; duplicate language; bad `includedServiceIds`; both or neither of `serviceId` / `packageId`; `preferredStartTime` with `packageId` |
+| 404 | `PACKAGE_NOT_FOUND` | Unknown or inactive package slug or `packageId` (public); unknown package id (admin) |
+| 404 | `SERVICE_NOT_FOUND` | An `includedServiceIds` entry does not exist |
+| 409 | `PACKAGE_SLUG_TAKEN` | Another package has the slug |
+| 409 | `TRANSLATION_MISSING` | Activating, or saving an active package, without all three languages |
+| 409 | `PACKAGE_SERVICES_INACTIVE` | Activating a package with no active included service |
+| 409 | `PERIOD_FULL` / `DOCTOR_UNAVAILABLE` | As for service bookings and confirmation |
+| 412 / 428 | `VERSION_MISMATCH` / `VERSION_REQUIRED` | As for other admin edits |
+
+### Migration
+
+- Flyway adds `package`, `package_translation` (with `exclusions` as `text[]`) and `package_service`.
+- `appointment.service_id` becomes nullable; add `appointment.package_id` (FK, `ON DELETE RESTRICT`)
+  and `CHECK (num_nonnulls(service_id, package_id) = 1)`. Existing appointments keep `service_id`.
+- No packages are seeded; the clinic enters real packages and prices.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| `GET /public/packages?lang=en` with one active and one inactive package | `200`; one package with `priceUsd` |
+| `GET /public/packages/annual-health-check?lang=km` | `200`; Khmer text, included active services, exclusions |
+| Package detail where one included service is inactive | That service is not listed |
+| Inactive package slug | `404 PACKAGE_NOT_FOUND` |
+| Book a package with `preferredPeriod: MORNING` and capacity left | `201`, `PENDING`; appointment copies package duration and buffer |
+| Book with both `serviceId` and `packageId` | `400 VALIDATION_ERROR` |
+| Book a package with `preferredStartTime` | `400 VALIDATION_ERROR` |
+| 120 + 15 minute package in a morning with 400 of 480 minutes used | `409 PERIOD_FULL` |
+| Confirm a package appointment with a doctor who is free | `200 CONFIRMED`; no booking window needed |
+| Confirm two overlapping package visits for one doctor at once | One `200`, one `409 DOCTOR_UNAVAILABLE` |
+| Admin list shows a package appointment | `bookingType: PACKAGE`, `packageName` set, `serviceName: null` |
+| Activate a package missing `zh` | `409 TRANSLATION_MISSING` |
+| Two packages saved with the same slug | Second gets `409 PACKAGE_SLUG_TAKEN` |
+| Edit a package's duration after a booking | Existing appointment keeps its copied duration |
+
+### Open questions for the Team Lead
+
+1. Can a package visit need more than one doctor or staff member? This revision assigns one doctor.
+2. Should packages support exact-time requests? This revision allows periods only (PK-07).
+3. A package longer than a period (for example 300 minutes in a 240-minute morning) can be
+   requested but never confirmed. Should the admin editor block it? This revision does not.
