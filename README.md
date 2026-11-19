@@ -68,6 +68,59 @@ Run `./mvnw verify` or `.\mvnw.cmd verify` on Windows. The Spring Boot integrati
 
 [GitHub Actions](.github/workflows/ci.yml) runs Maven verification against PostgreSQL and checks the backend Docker build. For deployment, build from the repository root and supply the datasource credentials and Keycloak issuer through the hosting environment. `PORT` defaults to `8080`. Use `/api/v1/health` for the deployment health check.
 
+## Staff Telegram booking notifications
+
+Optional backend-only integration. Each new
+booking queues one `APPOINTMENT_CREATED` summary for the configured private reception
+group. It includes the reference, patient name and phone, English service name
+(slug fallback), requested date/time or period, `Pending review`, and submission
+time in `Asia/Phnom_Penh`. Messages contain no buttons, links, patient email or
+medical notes. Receptionists review bookings separately in the authenticated dashboard.
+No public endpoints, patient Telegram subscriptions or appointment statuses are added.
+
+1. Create a clinic bot through Telegram's BotFather and add it to a private group
+   limited to authorized reception staff. Ensure it can send messages.
+2. Obtain that group's numeric `chat.id` through the Telegram Bot API, using a
+   group command/update visible to the bot. Keep tokens out of source control and logs.
+3. Set `TELEGRAM_ENABLED=true`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` in the
+   backend environment (or `.env` for the local profile/Compose). The group ID is
+   negative. Invalid enabled configuration fails startup. The default is disabled.
+4. Restart the backend to apply Flyway V12 and load configuration. Create a test
+   booking using the existing booking API. Configure test credentials only when
+   deliberately testing real Telegram delivery.
+
+The existing appointment transaction saves the booking and its outbox job together.
+An idempotent booking replay does not queue another job. With Telegram disabled,
+bookings do not create jobs; enabling it does not backfill old bookings. Disabling
+it pauses existing jobs without deleting them. A job snapshots its destination and
+message when created; changing the configured group affects new jobs only.
+
+Every five seconds the worker processes up to ten jobs. Claims use PostgreSQL
+`FOR UPDATE SKIP LOCKED` with a two-minute lease; network calls run after the claim
+transaction commits, with five-second connect and ten-second read timeouts.
+Expired leases can be reclaimed and stale workers cannot mark a newer claim complete.
+Transient network/5xx failures retry with exponential backoff starting at 30 seconds;
+429 responses also honor Telegram's `retry_after` for that job. Permanent API errors
+fail immediately. `TELEGRAM_RETRY_MAX_ATTEMPTS` defaults to five (range 1–20).
+Exhausted jobs remain `FAILED` for operator inspection; no public retry endpoint exists.
+
+Inspect delivery counts without selecting patient messages:
+
+```sql
+SELECT status, count(*) FROM clinic.notification_job GROUP BY status;
+SELECT id, attempts, last_error_code FROM clinic.notification_job WHERE status = 'FAILED';
+```
+
+Logs include job IDs and safe error codes only. Database access to the outbox must
+be restricted because messages include patient contact information. Telegram delivery
+is at least once: an ambiguous network timeout or a crash after Telegram accepts a
+message can result in a duplicate. The booking reference helps staff recognize it.
+Telegram outages do not roll back an already saved booking; an outbox database write
+failure rolls back the booking transaction so it cannot silently lose the notification.
+
+Notification unit tests use a mock HTTP transport; PostgreSQL tests use the existing
+`CLINIC_TEST_DATABASE_*` variables and never send real Telegram messages.
+
 ## Repository layout
 
 ```text

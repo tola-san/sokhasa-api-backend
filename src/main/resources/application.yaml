@@ -20,6 +20,13 @@ spring:
 server:
   port: "${PORT:8080}"
 
+clinic:
+  telegram:
+    enabled: ${TELEGRAM_ENABLED:false}
+    bot-token: ${TELEGRAM_BOT_TOKEN:}
+    chat-id: "${TELEGRAM_CHAT_ID:}"
+    retry-max-attempts: ${TELEGRAM_RETRY_MAX_ATTEMPTS:5}
+
 management:
   endpoints:
     web:
