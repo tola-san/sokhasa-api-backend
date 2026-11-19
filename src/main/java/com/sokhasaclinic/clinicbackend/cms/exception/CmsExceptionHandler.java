@@ -27,7 +27,8 @@ import software.amazon.awssdk.core.exception.SdkException;
  */
 @RestControllerAdvice(basePackages = {
         "com.sokhasaclinic.clinicbackend.cms.controller",
-        "com.sokhasaclinic.clinicbackend.clinicservice.controller"
+        "com.sokhasaclinic.clinicbackend.clinicservice.controller",
+        "com.sokhasaclinic.clinicbackend.doctor.profile"
 })
 public class CmsExceptionHandler {
 

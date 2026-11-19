@@ -18,6 +18,13 @@ public interface DoctorRepository extends JpaRepository<Doctor, UUID> {
     List<Doctor> findByStatusOrderBySortOrderAscFullNameAsc(DoctorStatus status);
     List<Doctor> findAllByOrderBySortOrderAscFullNameAscIdAsc();
 
+    /** Public candidates in PC-08 order; callers still require a profile in every language (PC-04). */
+    List<Doctor> findByStatusAndSlugIsNotNullOrderBySortOrderAscFullNameAscIdAsc(DoctorStatus status);
+
+    Optional<Doctor> findBySlugAndStatus(String slug, DoctorStatus status);
+
+    boolean existsBySlugAndIdNot(String slug, UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select d from Doctor d where d.id = :id")
     Optional<Doctor> findForUpdate(@Param("id") UUID id);

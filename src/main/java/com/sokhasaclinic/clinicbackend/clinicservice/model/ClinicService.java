@@ -93,6 +93,11 @@ public class ClinicService {
         updatedAt = now;
     }
 
+    /** Marks a change stored outside this row, such as its doctor links (PC-06), so the version increases. */
+    public void touch(Instant now) {
+        updatedAt = now;
+    }
+
     /** Returns false, and changes nothing, when the service already has {@code newStatus}. */
     public boolean changeStatus(ServiceStatus newStatus, Instant now) {
         if (status == newStatus) {

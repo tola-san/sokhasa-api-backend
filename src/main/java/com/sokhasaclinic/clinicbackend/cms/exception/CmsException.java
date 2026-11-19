@@ -93,4 +93,22 @@ public class CmsException extends RuntimeException {
     public static CmsException serviceVersionMismatch() {
         return new CmsException(412, "VERSION_MISMATCH", "Reload the service before saving.");
     }
+
+    public static CmsException doctorNotFound() {
+        return new CmsException(404, "DOCTOR_NOT_FOUND", "Doctor not found.");
+    }
+
+    public static CmsException doctorVersionMismatch() {
+        return new CmsException(412, "VERSION_MISMATCH", "Reload the doctor before saving.");
+    }
+
+    public static CmsException doctorSlugTaken() {
+        return new CmsException(409, "DOCTOR_SLUG_TAKEN", "Another doctor already uses this slug.",
+                List.of(Map.of("field", "slug", "message", "Choose a different slug.")));
+    }
+
+    /** DP-07: a photo needs the doctor's profile in every language. */
+    public static CmsException doctorTranslationMissing(Collection<Language> missing) {
+        return translationMissing(missing, "Save the doctor's profile in every language before adding a photo.");
+    }
 }
