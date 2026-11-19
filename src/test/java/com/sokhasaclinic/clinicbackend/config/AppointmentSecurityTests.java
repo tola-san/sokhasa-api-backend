@@ -2,6 +2,8 @@ package com.sokhasaclinic.clinicbackend.config;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,6 +51,7 @@ class AppointmentSecurityTests {
     void guestsCanBookAndReadPeriods() throws Exception {
         mvc.perform(post("/api/v1/public/appointments")).andExpect(status().isNotFound());
         mvc.perform(get("/api/v1/public/booking-periods")).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/public/booking-slots")).andExpect(status().isNotFound());
     }
 
     @Test
@@ -85,6 +88,24 @@ class AppointmentSecurityTests {
     void onlyBookingIsOpenForPostOnPublicRoutes() throws Exception {
         mvc.perform(post("/api/v1/public/booking-periods")).andExpect(status().isUnauthorized());
         mvc.perform(post("/api/v1/public/appointments/123")).andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void doctorManagementIsAdminOnlyWhileTheActiveListStaysShared() throws Exception {
+        String doctor = "/api/v1/admin/doctors/3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d01";
+        for (String token : List.of("receptionist", "administrator")) {
+            int expected = token.equals("administrator") ? 404 : 403;
+            String auth = "Bearer " + token;
+            mvc.perform(post("/api/v1/admin/doctors").header("Authorization", auth)).andExpect(status().is(expected));
+            mvc.perform(get("/api/v1/admin/doctors/manage").header("Authorization", auth)).andExpect(status().is(expected));
+            mvc.perform(put(doctor).header("Authorization", auth)).andExpect(status().is(expected));
+            mvc.perform(post(doctor + "/booking-windows").header("Authorization", auth)).andExpect(status().is(expected));
+            mvc.perform(delete(doctor + "/booking-windows/3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d02")
+                    .header("Authorization", auth)).andExpect(status().is(expected));
+            mvc.perform(get("/api/v1/admin/doctors").header("Authorization", auth)).andExpect(status().isNotFound());
+        }
+        mvc.perform(post("/api/v1/admin/doctors")).andExpect(status().isUnauthorized());
+        mvc.perform(get(doctor + "/booking-windows")).andExpect(status().isUnauthorized());
     }
 
     @TestConfiguration(proxyBeanMethods = false)

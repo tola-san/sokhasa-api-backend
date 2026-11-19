@@ -82,6 +82,7 @@ class AppointmentConcurrencyPostgresTests {
     void cleanUp() {
         jdbc.update("delete from clinic.appointment where service_id = ?", service);
         jdbc.update("delete from clinic.patient where phone like ?", phonePrefix + "%");
+        jdbc.update("delete from clinic.doctor_booking_window where service_id = ?", service);
         jdbc.update("delete from clinic.doctor where id = ?", doctor);
         jdbc.update("delete from clinic.service where id = ?", service);
     }
@@ -121,6 +122,40 @@ class AppointmentConcurrencyPostgresTests {
             assertEquals(1, count(outcomes, null), "round " + round + ": " + outcomes);
             assertEquals(1, count(outcomes, "DOCTOR_UNAVAILABLE"), "round " + round + ": " + outcomes);
         }
+    }
+
+    @Test
+    void twoExactRequestsForOneDoctorIntervalCannotBothSucceed() throws Exception {
+        for (int round = 0; round < ROUNDS; round++) {
+            LocalDate date = LocalDate.now(ClinicTime.ZONE).plusDays(30 + round);
+            jdbc.update("""
+                    insert into clinic.doctor_booking_window(id, doctor_id, service_id, day, start_time, end_time)
+                    values (?, ?, ?, ?, '14:00', '17:00')
+                    """, UUID.randomUUID(), doctor, service, date);
+            BookingCommand left = new BookingCommand(service, date, null, "en", "Patient A",
+                    phonePrefix + "801", null, null, LocalTime.of(14, 0));
+            BookingCommand right = new BookingCommand(service, date, null, "en", "Patient B",
+                    phonePrefix + "802", null, null, LocalTime.of(14, 30));
+            // Starts differ, but the 40-minute service intervals overlap.
+            List<Outcome> outcomes = race(() -> appointments.request(left), () -> appointments.request(right));
+            assertEquals(1, count(outcomes, null), outcomes.toString());
+            assertEquals(1, count(outcomes, "SLOT_UNAVAILABLE"), outcomes.toString());
+        }
+    }
+
+    @Test
+    void concurrentExactRetriesWithOneKeyCreateOneReservation() throws Exception {
+        LocalDate date = LocalDate.now(ClinicTime.ZONE).plusDays(35);
+        jdbc.update("""
+                insert into clinic.doctor_booking_window(id, doctor_id, service_id, day, start_time, end_time)
+                values (?, ?, ?, ?, '14:00', '17:00')
+                """, UUID.randomUUID(), doctor, service, date);
+        UUID key = UUID.randomUUID();
+        BookingCommand command = new BookingCommand(service, date, null, "en", "Patient Retry",
+                phonePrefix + "803", null, null, LocalTime.of(14, 0));
+        List<Outcome> outcomes = race(() -> appointments.request(command, key), () -> appointments.request(command, key));
+        assertEquals(2, count(outcomes, null), outcomes.toString());
+        assertEquals(1, jdbc.queryForObject("select count(*) from clinic.appointment where service_id = ?", Integer.class, service));
     }
 
     private AppointmentSnapshot book(LocalDate date) {

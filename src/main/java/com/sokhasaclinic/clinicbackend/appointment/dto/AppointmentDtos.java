@@ -7,6 +7,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -29,10 +30,12 @@ public final class AppointmentDtos {
     public record BookingRequest(
             @NotNull UUID serviceId,
             @NotNull LocalDate preferredDate,
-            @NotBlank String preferredPeriod,
+            String preferredPeriod,
             @NotBlank String language,
             @NotNull @Valid Patient patient,
-            @Size(max = 500) String notes) {
+            @Size(max = 500) String notes,
+            @Pattern(regexp = "(?:[01][0-9]|2[0-3]):(?:00|30)")
+            String preferredStartTime) {
     }
 
     public record Patient(
@@ -47,8 +50,13 @@ public final class AppointmentDtos {
             String reference,
             AppointmentStatus status,
             LocalDate preferredDate,
-            String preferredPeriod) {
+            String preferredPeriod,
+            String preferredStartTime) {
     }
+
+    public record BookingSlot(OffsetDateTime startAt, OffsetDateTime endAt) { }
+
+    public record BookingSlots(LocalDate date, String timeZone, List<BookingSlot> slots) { }
 
     /** One period on a date, and whether the service still fits (AP-11). */
     public record BookingPeriodAvailability(String code, String startTime, String endTime, boolean available) {
@@ -66,7 +74,8 @@ public final class AppointmentDtos {
             String preferredPeriod,
             String doctorName,
             OffsetDateTime startAt,
-            OffsetDateTime createdAt) {
+            OffsetDateTime createdAt,
+            String preferredStartTime) {
     }
 
     /** {@code GET /admin/appointments/{id}}: the list fields and the rest of the appointment. */
@@ -90,7 +99,8 @@ public final class AppointmentDtos {
             int bufferMinutes,
             UUID doctorId,
             OffsetDateTime endAt,
-            OffsetDateTime updatedAt) {
+            OffsetDateTime updatedAt,
+            String preferredStartTime) {
     }
 
     public record PageInfo(int number, int size, long totalElements, int totalPages) {
@@ -124,7 +134,7 @@ public final class AppointmentDtos {
             @Min(5) @Max(480) Integer durationMinutes) {
     }
 
-    /** Body of {@code PATCH .../reject}. The reason is required, 1–500 characters after trimming. */
+    /** Body of {@code PATCH .../reject}. The reason is required, 1ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“500 characters after trimming. */
     public record RejectRequest(@NotBlank @Size(max = 500) String reason) {
     }
 }

@@ -10,6 +10,109 @@
 
 ---
 
+## Services, doctors and packages — business scope November 19, 2026
+
+**Business direction agreed in discussion; API extensions below are proposals, not implemented endpoints.**
+The [shared API contract](api-contract.md) and [OpenAPI specification](openapi.yaml) remain
+the source of truth for implementation. This section records the latest direction for
+services, public doctor profiles and packages; older draft examples that show service
+prices or a patient-selected doctor do not describe this flow.
+
+### Public pages and content
+
+| Area | Content and actions |
+|---|---|
+| Service list | All active services, with image, name, short description and **View details**. Do not display service prices. |
+| Service detail | Full description, available examinations or procedures, clinic-approved preparation information, associated doctors, related packages and **Request appointment**. |
+| Doctor card | Photo, name, specialty and **View profile**. |
+| Doctor profile | Clinic-approved biography, qualifications, languages and associated services. Doctors remain clinic resources with no login or dashboard. |
+| Package list | Image, name, short description, clinic-approved package price, included-services summary and **View details**. |
+| Package detail | Full description, package price, included services and quantities, exclusions, preparation information and **Request appointment**. |
+| Booking form | Selected service or package, preferred date, morning/afternoon period, patient name and phone, optional email and notes, and the existing required language. |
+
+Service pricing is a display decision: existing API price fields and saved prices do not
+need to be removed merely to hide prices on the website. A package is a named bundle of
+specified services with its own price; its price need not equal the sum of individual fees.
+A service may appear in several packages. Show related packages only when they include the
+service being viewed. Clinic staff must supply the actual catalogue, package inclusions,
+prices, doctor details and preparation instructions; illustrative or seeded placeholder
+content is not a clinic-approved offer.
+
+### Booking and visit flow
+
+1. The patient selects one service or one package and chooses **Request appointment**.
+2. The patient requests a preferred date and period and submits contact details.
+3. The backend creates a **PENDING** request. Submission does not confirm availability.
+4. Reception reviews availability and preparation needs, including staff and equipment.
+5. Reception confirms the exact time and assigns the responsible doctor, or rejects the
+   pending request with a reason.
+6. A confirmed visit progresses through **ARRIVED**, **IN_PROGRESS** and **COMPLETED**.
+
+Allowed transitions stay unchanged:
+
+- Appointment decision: `PENDING → CONFIRMED` or `PENDING → REJECTED`.
+- Visit: `CONFIRMED → ARRIVED → IN_PROGRESS → COMPLETED`.
+
+Public doctor profiles are informational. Patients do not choose a doctor in the MVP;
+reception assigns one during confirmation, as already approved in the contract.
+
+### Package appointment rules
+
+- **One package request creates one appointment**, as selected in discussion.
+- This flow is intended for packages that can be completed in one visit. Multi-visit
+  packages require a separately defined workflow before they become bookable.
+- Package inclusions do not automatically create separate appointments.
+- The clinic defines a total appointment duration and turnover buffer for each package;
+  do not automatically sum the durations of its included services.
+- The appointment has one responsible doctor. Other staff may perform included tests;
+  this does not introduce additional application roles or doctor accounts.
+- Extend the existing capacity and concurrent overlap protections to package bookings.
+  Copy the booked duration and buffer so later catalogue edits do not change existing bookings.
+- Package content, scheduling and lifecycle contracts must be defined before implementation;
+  adding a package to the public catalogue alone does not make current booking APIs support it.
+
+### Reception and administration
+
+| Role | Responsibilities |
+|---|---|
+| Receptionist | Review service and package requests, confirm exact time and responsible doctor, reject with a reason, and advance visit status. |
+| Clinic Admin | Manage service content, public doctor profiles and service associations, package prices and inclusions, images, and active/inactive publication state. The new editing capabilities require contract extensions. |
+
+Keep existing role boundaries and multilingual rules: `km`, `en` and `zh`, a required
+public `lang`, translated public content, and clinic-approved text in all required
+languages before activation.
+
+### API implementation gaps and proposed work
+
+| Area | Current support | Required extension |
+|---|---|---|
+| Services | Public active-service list and admin editing exist. Public fields include a short description and optional prices. | Public detail response with full description and preparation information; website hides service prices. |
+| Doctors | Staff-only active-doctor lookup for appointment confirmation. | Public profiles, photos and specialties, plus service–doctor associations. The staff-only lookup must not be exposed as a public profile endpoint. |
+| Packages | Some package-named offerings currently use the service model. No structured package catalogue or inclusions API. | Separate public package list/detail representations, package prices, inclusions with quantities, and admin editing. Preserve existing booking references when migrating catalogue records. |
+| Booking | Public creation and period availability currently require `serviceId`. | Explicit package selection, package duration/buffer and capacity handling, with the same pending/reception/visit flow. |
+| Staff views | Appointment list/detail currently identify the booked service. | Clearly identify the booked service or package and expose its relevant details to reception. |
+
+**Booking identifier design remains a technical proposal.** Reusing `serviceId` for a
+shared bookable offering could preserve the existing request shape; an explicit
+service/package selection is another option. Neither has been selected as an approved
+wire contract. Define request/response fields, validation, compatibility with existing
+clients and seeded package records, and period-availability behavior together. Preserve
+idempotency, authorization, optimistic locking and transactional concurrency guarantees.
+New endpoints use the existing `/api/v1` prefix and established response conventions.
+
+### Delivery responsibilities
+
+| Owner | Work |
+|---|---|
+| Codex | Backend APIs, DTOs, domain and persistence changes, Flyway migrations, validation, access control, package booking and concurrency, backend tests, and API documentation. |
+| Antigravity | Service, doctor and package pages/cards, hiding service prices, booking-form selection, reception/admin interfaces, responsive behavior, frontend integration and tests. |
+| Team Lead | Resolve remaining business or architecture questions and approve the shared request/response contract and integration. |
+
+Implement against the shared contract after the extension is specified and coordinated.
+Keep root and backend contract/OpenAPI copies in sync, with a contract-change pull request
+in each repository. This documentation update does not implement APIs, alter dependencies,
+or replace the existing approved contract.
+
 ## 1. API Overview
 
 ### 1.1 Purpose
@@ -1365,17 +1468,103 @@ Follow this sequence when implementing the APIs.
 
 ---
 
+### 21.1 API TODO list — services, doctors and packages
+
+Updated November 19, 2026. This checklist tracks the
+[agreed business scope](#services-doctors-and-packages--business-scope-november-19-2026).
+Unchecked items are remaining work, not implemented or approved API extensions. The module
+order above is a general roadmap; use the dependencies below for this extension.
+Doctor schedules, patient doctor selection and multi-visit packages are outside this MVP.
+
+#### Contract and clinic content — Team Lead with Codex and Antigravity
+
+- [ ] **CAT-01 — Finalize the shared API contract.** Define public service details, public
+  doctor profiles and associations, package list/details, admin editing, multilingual fields,
+  validation and error responses. Decide whether package bookings reuse `serviceId` as a
+  bookable-offering ID or use explicit service/package selection; cover both booking creation
+  and period availability. Specify compatibility with current clients and existing bookings.
+- [ ] **CAT-02 — Confirm catalogue content.** Obtain the complete service list, doctor details
+  and service associations, package names, prices, inclusions and quantities, exclusions,
+  preparation text, total durations and buffers from the clinic. Identify existing
+  package-named service records for migration. Preserve their appointment references.
+- [ ] **CAT-03 — Coordinate contract delivery.** After CAT-01, update `api-contract.md` and
+  `openapi.yaml` in both repositories, including the backend-served specification.
+  Submit contract changes through a pull request in each repository.
+
+#### Service APIs — Codex; depends on CAT-01 and CAT-03
+
+- [ ] **SVC-01 — Add public service details.** Return full description, offered
+  examinations/procedures and preparation information alongside existing service fields.
+  Define active-only lookup and not-found behavior; keep service prices available to existing
+  clients while the website hides them.
+- [ ] **SVC-02 — Extend service administration.** Support approved detail fields and
+  service–doctor associations, preserving image handling, multilingual validation,
+  ADMIN access and ETag/If-Match concurrency. Deliver the clinic-approved catalogue from CAT-02.
+
+#### Doctor APIs — Codex; depends on CAT-01 and CAT-03
+
+- [ ] **DOC-01 — Add public doctor profiles and service associations.** Provide active public
+  doctor cards/details with photo, name, specialty, biography, qualifications, languages and
+  associated services. Return associated active doctors on service details using the agreed
+  response shape. Keep the existing staff confirmation lookup separate.
+- [ ] **DOC-02 — Add doctor profile administration.** Support approved profile fields,
+  translations, photos, associations and activation/deactivation with ADMIN access and
+  optimistic concurrency. Doctors remain resources without application accounts.
+
+#### Package APIs — Codex; depends on CAT-01, CAT-02 and CAT-03
+
+- [ ] **PKG-01 — Define package persistence and migrate existing records.** Store package
+  price, included service references and quantities, ordering, total duration and buffer.
+  Define inclusion validation, service/package deactivation behavior, and what booked package
+  details must be retained when the catalogue changes. Use new Flyway migrations.
+- [ ] **PKG-02 — Add public package list/details.** Return active packages with image,
+  translated descriptions, clinic-approved price, inclusions, exclusions and preparation.
+  Return related packages only when they include the selected service.
+- [ ] **PKG-03 — Add package administration.** Manage package fields, images, inclusions,
+  prices and activation/deactivation with ADMIN access, multilingual validation and
+  ETag/If-Match protection. Do not publish placeholder offers as clinic-approved packages.
+
+#### Package booking and reception — Codex; depends on CAT-03 and PKG-01
+
+- [ ] **BKG-01 — Extend booking and period availability.** Accept exactly one selected
+  service or package under the agreed contract. One package creates one PENDING appointment,
+  using its configured total duration and buffer rather than an automatic sum of inclusions.
+  Copy duration/buffer at booking; recheck capacity transactionally; preserve idempotency,
+  rate limits and existing service booking behavior.
+- [ ] **BKG-02 — Extend staff appointment responses and confirmation.** Identify the selected
+  service/package and its agreed booked details. Reception assigns one responsible doctor and
+  exact time on confirmation. Preserve role checks, ETags, history and concurrent overlap
+  protection; included services do not create child appointments.
+
+#### Integration and verification — Codex and Antigravity
+
+- [ ] **INT-01 — Connect frontend flows (Antigravity).** After the corresponding API tasks,
+  hide service prices; build service details, doctor cards/profiles, package lists/details,
+  service/package booking selection and staff editing/reception interfaces. Use
+  **Request appointment** consistently; show that reception approval is required.
+- [ ] **INT-02 — Verify backend behavior (Codex).** Test active-only public content,
+  multilingual validation, associations/inclusions, authorization, ETag conflicts, migrations,
+  unchanged service booking, package period capacity, duplicate submission, concurrency,
+  doctor overlap and unchanged lifecycle transitions. Run `./mvnw verify` or
+  `.\mvnw.cmd verify` against local PostgreSQL.
+- [ ] **INT-03 — Verify integration and release readiness (both).** Confirm both contract
+  copies and the served specification agree, frontend/API field mappings work, and existing
+  appointments survive migration and catalogue edits. Run the project-required frontend
+  checks and review the coordinated pull requests before integration.
+
+---
+
 ## 22. Pending API Decisions
 
 The following items require clinic approval or technical confirmation.
 
 | ID | Decision | Impact |
 |---|---|---|
-| API-01 | Multiple services in one appointment? | Booking request and database relationships |
-| API-02 | Is preferred doctor optional? | Booking API |
-| API-03 | Can a service be provided by multiple doctors? | Service/doctor relationship |
+| API-01 | Business direction agreed: select one service or one package; one package creates one appointment. Arbitrary service multi-selection and multi-visit packages are outside this MVP. | Finalize identifiers, inclusions and compatibility in CAT-01; implement through PKG-01 and BKG-01. |
+| API-02 | Resolved for the MVP by the approved contract: no patient doctor selection; reception assigns the doctor on confirmation. Public profiles are informational. | Preserve this rule in DOC-01 and BKG-02. |
+| API-03 | Associate doctors with services for public display. Confirm relationship cardinality and management payloads in CAT-01. | Service/doctor persistence, public responses and admin editing in SVC-02 and DOC-01/DOC-02. |
 | API-04 | How are doctor breaks represented? | Schedule and availability APIs |
-| API-05 | Is appointment duration fixed or service-based? | Availability and booking |
+| API-05 | Service duration and buffer are already approved. Proposed package behavior: a clinic-defined total duration and buffer, copied at booking rather than summed from inclusions. | Finalize the package extension in CAT-01; implement PKG-01 and BKG-01. |
 | API-06 | What is the cancellation workflow? | Appointment APIs |
 | API-07 | Can confirmed appointments be rescheduled? | Status transition rules |
 | API-08 | Is public booking status lookup required? | Public security |

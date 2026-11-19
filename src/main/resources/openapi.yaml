@@ -464,6 +464,46 @@ paths:
         '428':
           description: If-Match header is missing (VERSION_REQUIRED)
 
+  /public/booking-slots:
+    get:
+      tags: [Public Booking]
+      operationId: getBookingSlots
+      summary: Available exact starts on a 30-minute grid in clinic time
+      description: |
+        Requires clinic-verified doctor/service/date windows. Returns available starts only,
+        sorted and deduplicated. Duration and buffer follow the service. Pending exact requests
+        reserve a doctor; unresolved legacy pending period requests block exact availability
+        for that date and period across services. Availability is a hint, rechecked on submission.
+        Responses use Cache-Control no-store.
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: serviceId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Available starts; an empty list when no verified availability remains
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/BookingSlots'
+        '400':
+          $ref: '#/components/responses/AppointmentValidationError'
+        '404':
+          $ref: '#/components/responses/AppointmentProblem'
+
   /public/booking-periods:
     get:
       tags:
@@ -514,6 +554,9 @@ paths:
         Requires an Idempotency-Key (AP-03): the same key and body return the first response; the
         same key with a different body returns 409 IDEMPOTENCY_CONFLICT. The period must have
         capacity left (409 PERIOD_FULL). At most 5 requests per client per 10 minutes (AP-12).
+        Send exactly one of preferredPeriod or preferredStartTime. Exact requests atomically reserve
+        an eligible doctor interval, buffer included; conflicts return 409 SLOT_UNAVAILABLE.
+        All requests still start as PENDING and require reception approval.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -542,7 +585,7 @@ paths:
         '404':
           description: Unknown or inactive service (SERVICE_NOT_FOUND)
         '409':
-          description: PERIOD_FULL or IDEMPOTENCY_CONFLICT
+          description: PERIOD_FULL, SLOT_UNAVAILABLE or IDEMPOTENCY_CONFLICT
           content:
             application/problem+json:
               schema:
@@ -864,8 +907,559 @@ paths:
                         fullName:
                           type: string
 
+    post:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: createDoctor
+      summary: Create a doctor resource
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorWrite'
+      responses:
+        '201':
+          description: Created resource
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+            Location:
+              schema:
+                type: string
+              description: Detail URL for the created resource.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/manage:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: manageDoctors
+      summary: List all active and inactive doctor resources
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      responses:
+        '200':
+          description: Doctor management response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/{id}:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getManagedDoctor
+      summary: Read a doctor and ETag
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: updateDoctor
+      summary: Replace doctor fields and status
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorWrite'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/ManagedDoctor'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/doctors/{id}/booking-windows:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: listDoctorBookingWindows
+      summary: List working windows in a date range of at most 62 days
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - name: from
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: serviceId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Doctor management response
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    post:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: createDoctorBookingWindow
+      summary: Create a verified service working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorBookingWindowWrite'
+      responses:
+        '201':
+          description: Created resource
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+            Location:
+              schema:
+                type: string
+              description: Detail URL for the created resource.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/doctors/{id}/booking-windows/{windowId}:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getDoctorBookingWindow
+      summary: Read a working window and ETag
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: updateDoctorBookingWindow
+      summary: Replace an unused working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoctorBookingWindowWrite'
+      responses:
+        '200':
+          description: Doctor management response
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/DoctorBookingWindow'
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+    delete:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: deleteDoctorBookingWindow
+      summary: Delete an unused working window
+      description: ADMIN only. Times use Asia/Phnom_Penh. Responses use Cache-Control no-store.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+        - $ref: '#/components/parameters/BookingWindowId'
+        - $ref: '#/components/parameters/AppointmentIfMatch'
+      responses:
+        '204':
+          description: Deleted unused working window
+        '400':
+          description: Invalid fields, date range or time interval
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '403':
+          description: Clinic Admin required
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '404':
+          description: DOCTOR_NOT_FOUND, BOOKING_WINDOW_NOT_FOUND or SERVICE_NOT_FOUND
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: SCHEDULE_IN_USE, DOCTOR_IN_USE or BOOKING_WINDOW_OVERLAP
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
 components:
   parameters:
+    DoctorId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    BookingWindowId:
+      name: windowId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
     AppointmentId:
       name: id
       in: path
@@ -969,6 +1563,81 @@ components:
 
 
   schemas:
+
+    DoctorWrite:
+      type: object
+      required: [fullName, status, sortOrder]
+      properties:
+        fullName:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Dr. Sok
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        sortOrder:
+          type: integer
+          minimum: 0
+
+    ManagedDoctor:
+      allOf:
+        - $ref: '#/components/schemas/DoctorWrite'
+        - type: object
+          required: [id, version, createdAt, updatedAt]
+          properties:
+            id:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              format: int64
+              minimum: 0
+            createdAt:
+              type: string
+              format: date-time
+            updatedAt:
+              type: string
+              format: date-time
+
+    DoctorBookingWindowWrite:
+      type: object
+      required: [serviceId, date, startTime, endTime]
+      description: Active doctor/service; within booking date window; duration plus buffer must fit. Same-service working windows cannot overlap. Used windows are immutable.
+      properties:
+        serviceId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+          example: '2026-11-21'
+        startTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '14:00'
+        endTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):[0-5][0-9]$'
+          example: '17:00'
+
+    DoctorBookingWindow:
+      allOf:
+        - $ref: '#/components/schemas/DoctorBookingWindowWrite'
+        - type: object
+          required: [id, doctorId, version]
+          properties:
+            id:
+              type: string
+              format: uuid
+            doctorId:
+              type: string
+              format: uuid
+            version:
+              type: integer
+              format: int64
+              minimum: 0
+
     LanguageCode:
       type: string
       enum: [km, en, zh]
@@ -1326,9 +1995,45 @@ components:
         available:
           type: boolean
 
+    BookingSlot:
+      type: object
+      required: [startAt, endAt]
+      properties:
+        startAt:
+          type: string
+          format: date-time
+          example: '2026-11-20T14:00:00+07:00'
+        endAt:
+          type: string
+          format: date-time
+          description: Service end; availability also accounts for the buffer after this time.
+          example: '2026-11-20T14:30:00+07:00'
+
+    BookingSlots:
+      type: object
+      required: [date, timeZone, slots]
+      properties:
+        date:
+          type: string
+          format: date
+        timeZone:
+          type: string
+          const: Asia/Phnom_Penh
+        slots:
+          type: array
+          items:
+            $ref: '#/components/schemas/BookingSlot'
+
     BookingRequest:
       type: object
-      required: [serviceId, preferredDate, preferredPeriod, language, patient]
+      required: [serviceId, preferredDate, language, patient]
+      oneOf:
+        - required: [preferredPeriod]
+          not:
+            required: [preferredStartTime]
+        - required: [preferredStartTime]
+          not:
+            required: [preferredPeriod]
       properties:
         serviceId:
           type: string
@@ -1340,6 +2045,11 @@ components:
         preferredPeriod:
           type: string
           example: MORNING
+        preferredStartTime:
+          type: string
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Exact requested start, HH:mm in Asia/Phnom_Penh. Omit preferredPeriod.
+          example: '14:30'
         language:
           $ref: '#/components/schemas/LanguageCode'
         patient:
@@ -1379,6 +2089,11 @@ components:
           type: string
           example: MORNING
 
+        preferredStartTime:
+          type: [string, 'null']
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Original exact request in clinic time; null for legacy period requests.
+
     AppointmentListItem:
       type: object
       properties:
@@ -1412,6 +2127,11 @@ components:
         createdAt:
           type: string
           format: date-time
+
+        preferredStartTime:
+          type: [string, 'null']
+          pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
+          description: Original exact request in clinic time; null for legacy period requests.
 
     AppointmentDetail:
       allOf:

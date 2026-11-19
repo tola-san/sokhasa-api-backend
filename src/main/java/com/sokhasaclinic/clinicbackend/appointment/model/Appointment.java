@@ -16,6 +16,7 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 import lombok.Getter;
 
@@ -67,6 +68,21 @@ public class Appointment {
 
     @Column(name = "preferred_period", nullable = false, updatable = false, length = 20)
     private String preferredPeriod;
+
+    @Column(name = "preferred_start_time", updatable = false)
+    private LocalTime preferredStartTime;
+
+    @Column(name = "booking_window_id", updatable = false)
+    private UUID bookingWindowId;
+
+    @Column(name = "reserved_doctor_id")
+    private UUID reservedDoctorId;
+
+    @Column(name = "reserved_start_at")
+    private Instant reservedStartAt;
+
+    @Column(name = "reserved_end_at")
+    private Instant reservedEndAt;
 
     @Column(name = "duration_minutes", nullable = false)
     private int durationMinutes;
@@ -134,12 +150,30 @@ public class Appointment {
     }
 
     /**
-     * {@code PENDING → CONFIRMED} with the doctor and exact time chosen by reception. The caller
+     * {@code PENDING ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ CONFIRMED} with the doctor and exact time chosen by reception. The caller
      * has already checked that the appointment fits inside {@code period} on {@code date}.
      */
+    public void reserve(UUID windowId, UUID doctorId, LocalTime requestedTime, Instant start) {
+        if (status != AppointmentStatus.PENDING || preferredStartTime != null) {
+            throw new IllegalStateException("Only a new pending request can reserve a slot.");
+        }
+        bookingWindowId = windowId;
+        preferredStartTime = requestedTime;
+        reservedDoctorId = doctorId;
+        reservedStartAt = start;
+        reservedEndAt = start.plusSeconds(durationMinutes * 60L);
+    }
+
+    private void clearReservation() {
+        reservedDoctorId = null;
+        reservedStartAt = null;
+        reservedEndAt = null;
+    }
+
     public void confirm(Doctor assignedDoctor, Instant start, int newDurationMinutes, LocalDate date,
             BookingPeriod period, Instant now) {
         moveTo(AppointmentStatus.CONFIRMED, now);
+        clearReservation();
         doctor = assignedDoctor;
         durationMinutes = newDurationMinutes;
         startAt = start;
@@ -150,6 +184,7 @@ public class Appointment {
 
     public void reject(Instant now) {
         moveTo(AppointmentStatus.REJECTED, now);
+        clearReservation();
     }
 
     public void arrive(Instant now) {

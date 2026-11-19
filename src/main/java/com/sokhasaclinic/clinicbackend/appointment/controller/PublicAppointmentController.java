@@ -3,18 +3,22 @@ package com.sokhasaclinic.clinicbackend.appointment.controller;
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingConfirmation;
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingPeriodAvailability;
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingRequest;
+import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingSlots;
 import com.sokhasaclinic.clinicbackend.appointment.exception.AppointmentException;
+import com.sokhasaclinic.clinicbackend.appointment.model.AppointmentStatus;
 import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentQueryService;
 import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentService;
 import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentService.BookingResult;
 import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentSnapshot;
 import com.sokhasaclinic.clinicbackend.appointment.service.BookingCommand;
 import com.sokhasaclinic.clinicbackend.appointment.service.BookingRateLimiter;
+import com.sokhasaclinic.clinicbackend.appointment.service.BookingSlotService;
 import com.sokhasaclinic.clinicbackend.cms.dto.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.net.URI;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -30,7 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Public booking routes (docs/api-contract.md, "Appointment booking and reception", approved
- * November 18, 2026). Open to guests; SecurityConfig permits exactly these two routes.
+ * November 18, 2026), extended for exact-time slots on November 19. Open to guests.
  */
 @RestController
 public class PublicAppointmentController {
@@ -38,12 +42,22 @@ public class PublicAppointmentController {
     private final AppointmentService appointments;
     private final AppointmentQueryService queries;
     private final BookingRateLimiter rateLimiter;
+    private final BookingSlotService slots;
 
     public PublicAppointmentController(AppointmentService appointments, AppointmentQueryService queries,
-            BookingRateLimiter rateLimiter) {
+            BookingRateLimiter rateLimiter, BookingSlotService slots) {
         this.appointments = appointments;
         this.queries = queries;
         this.rateLimiter = rateLimiter;
+        this.slots = slots;
+    }
+
+    @GetMapping("/api/v1/public/booking-slots")
+    public ResponseEntity<ApiResponse<BookingSlots>> bookingSlots(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam UUID serviceId) {
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(new ApiResponse<>(slots.availability(date, serviceId)));
     }
 
     /** AP-11: whether each period on a date still has room for the service. */
@@ -69,13 +83,15 @@ public class PublicAppointmentController {
         rateLimiter.acquire(ClientAddress.of(request));
         BookingResult result = appointments.request(new BookingCommand(
                 body.serviceId(), body.preferredDate(), body.preferredPeriod(), body.language(),
-                body.patient().fullName(), body.patient().phone(), body.patient().email(), body.notes()), key);
+                body.patient().fullName(), body.patient().phone(), body.patient().email(), body.notes(),
+                body.preferredStartTime() == null ? null : LocalTime.parse(body.preferredStartTime())), key);
         AppointmentSnapshot booked = result.appointment();
         return ResponseEntity.created(URI.create("/api/v1/admin/appointments/" + booked.id()))
                 .cacheControl(CacheControl.noStore())
                 .body(new ApiResponse<>(new BookingConfirmation(
-                        booked.id(), booked.reference(), booked.status(), booked.preferredDate(),
-                        booked.preferredPeriod())));
+                        booked.id(), booked.reference(), AppointmentStatus.PENDING, booked.preferredDate(),
+                        booked.preferredPeriod(),
+                        booked.preferredStartTime() == null ? null : booked.preferredStartTime().toString())));
     }
 
     private static UUID parseKey(String header) {

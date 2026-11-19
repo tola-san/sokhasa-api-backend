@@ -134,7 +134,7 @@ public class AppointmentQueryService {
                 a.getService().getId(), a.getPatientEmail(), a.getLanguageCode(), a.getNotes(),
                 a.getDurationMinutes(), a.getBufferMinutes(),
                 a.getDoctor() == null ? null : a.getDoctor().getId(),
-                clinicTime(a.getEndAt()), clinicTime(a.getUpdatedAt()));
+                clinicTime(a.getEndAt()), clinicTime(a.getUpdatedAt()), requestedTime(a));
         return new VersionedDetail(detail, a.getVersion());
     }
 
@@ -242,7 +242,7 @@ public class AppointmentQueryService {
                 a.getId(), a.getReference(), a.getStatus(), a.getPatientName(), a.getPatientPhone(), serviceName,
                 a.getPreferredDate(), a.getPreferredPeriod(),
                 a.getDoctor() == null ? null : a.getDoctor().getFullName(),
-                clinicTime(a.getStartAt()), clinicTime(a.getCreatedAt()));
+                clinicTime(a.getStartAt()), clinicTime(a.getCreatedAt()), requestedTime(a));
     }
 
     private Map<UUID, String> serviceNames(Collection<UUID> serviceIds) {
@@ -253,6 +253,10 @@ public class AppointmentQueryService {
         return serviceText.findByServiceIds(ids).stream()
                 .filter(t -> STAFF_LANGUAGE.equals(t.getId().getLanguageCode()))
                 .collect(Collectors.toMap(t -> t.getId().getOwnerId(), ClinicServiceTranslation::getName, (a, b) -> a));
+    }
+
+    private static String requestedTime(Appointment a) {
+        return a.getPreferredStartTime() == null ? null : a.getPreferredStartTime().toString();
     }
 
     static OffsetDateTime clinicTime(Instant instant) {

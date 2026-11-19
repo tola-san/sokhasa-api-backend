@@ -1,8 +1,8 @@
 package com.sokhasaclinic.clinicbackend.doctor.dto;
 
-/**
- * Define doctor fields approved for management and scheduling responses.
- */
-public record DoctorResponse() {
-    // TODO: Add approved record components and map them from the application model.
-}
+import com.sokhasaclinic.clinicbackend.doctor.model.DoctorStatus;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+public record DoctorResponse(UUID id, String fullName, DoctorStatus status, int sortOrder,
+        long version, OffsetDateTime createdAt, OffsetDateTime updatedAt) { }

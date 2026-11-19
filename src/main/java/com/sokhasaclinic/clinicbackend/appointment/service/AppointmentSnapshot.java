@@ -4,6 +4,7 @@ import com.sokhasaclinic.clinicbackend.appointment.model.Appointment;
 import com.sokhasaclinic.clinicbackend.appointment.model.AppointmentStatus;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.UUID;
 
 /**
@@ -29,7 +30,8 @@ public record AppointmentSnapshot(
         Instant endAt,
         Instant createdAt,
         Instant updatedAt,
-        long version) {
+        long version,
+        LocalTime preferredStartTime) {
 
     static AppointmentSnapshot of(Appointment a) {
         return new AppointmentSnapshot(
@@ -51,6 +53,7 @@ public record AppointmentSnapshot(
                 a.getEndAt(),
                 a.getCreatedAt(),
                 a.getUpdatedAt(),
-                a.getVersion());
+                a.getVersion(),
+                a.getPreferredStartTime());
     }
 }
