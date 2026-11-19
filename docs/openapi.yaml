@@ -352,6 +352,31 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
 
   /admin/doctors/{id}/profile:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getDoctorProfile
+      summary: Read a doctor's profile for editing
+      description: ADMIN only (DP-12). slug is null and translations is empty until a profile is saved.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      responses:
+        '200':
+          description: The doctor's profile in every saved language
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfileWrapper'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown doctor (DOCTOR_NOT_FOUND)
     put:
       tags: [Doctor Management]
       security:

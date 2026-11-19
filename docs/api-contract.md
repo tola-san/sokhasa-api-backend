@@ -1333,6 +1333,7 @@ slug, role (`title`) and bio. This revision adds the remaining fields and the ph
 | DP-09 | Public list carries the card | **Changes PC's list item.** `GET /public/doctors` returns every card field (`bio`, `education`, `tags`, `experienceYears`, `publicationsCount`, photo), so the homepage card needs no request per doctor. The detail adds `services` only. The doctor summary inside a service detail stays as in PC. |
 | DP-10 | Who edits | `ADMIN` only (PC-07). |
 | DP-11 | Website fallback | When `imageUrl` is `null`, the website shows its bundled fallback doctor picture. |
+| DP-12 | Reading a profile | `GET /api/v1/admin/doctors/{id}/profile` returns the admin profile body and `ETag`, so the editor can load it. `slug` is `null` and `translations` is `[]` until a profile is saved. |
 
 ### Routes
 
@@ -1340,6 +1341,7 @@ slug, role (`title`) and bio. This revision adds the remaining fields and the ph
 | --- | --- | --- |
 | GET | /api/v1/public/doctors?lang= | Public (changed: card fields, DP-09) |
 | GET | /api/v1/public/doctors/{slug}?lang= | Public (changed: card fields) |
+| GET | /api/v1/admin/doctors/{id}/profile | ADMIN (new, DP-12) |
 | PUT | /api/v1/admin/doctors/{id}/profile | ADMIN, `If-Match` required (changed: new fields) |
 | PUT | /api/v1/admin/doctors/{id}/image | ADMIN, `If-Match` required (new) |
 | DELETE | /api/v1/admin/doctors/{id}/image | ADMIN, `If-Match` required (new) |
