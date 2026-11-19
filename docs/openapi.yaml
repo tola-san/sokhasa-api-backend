@@ -285,7 +285,7 @@ paths:
         - Public Doctors
       operationId: listPublicDoctors
       summary: List public doctor profiles in one language
-      description: PC-04, November 19, 2026. ACTIVE doctors with a slug and all three profile languages. Cache-Control no-store.
+      description: PC-04 and DP-09, November 19, 2026. ACTIVE doctors with a slug and all three profile languages, with every card field. Cache-Control no-store.
       parameters:
         - name: lang
           in: query
@@ -352,13 +352,38 @@ paths:
                 $ref: '#/components/schemas/ProblemDetails'
 
   /admin/doctors/{id}/profile:
+    get:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: getDoctorProfile
+      summary: Read a doctor's profile for editing
+      description: ADMIN only (DP-12). slug is null and translations is empty until a profile is saved.
+      parameters:
+        - $ref: '#/components/parameters/DoctorId'
+      responses:
+        '200':
+          description: The doctor's profile in every saved language
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfileWrapper'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown doctor (DOCTOR_NOT_FOUND)
     put:
       tags: [Doctor Management]
       security:
         - BearerAuth: []
       operationId: updateDoctorProfile
-      summary: Set a doctor's public slug, title and bio
-      description: ADMIN only (PC-05, PC-07). Increases the doctor's version.
+      summary: Set a doctor's public profile and card fields
+      description: ADMIN only (PC-05, PC-07, DP-01 to DP-04, DP-08). Increases the doctor's version.
       parameters:
         - $ref: '#/components/parameters/DoctorId'
         - $ref: '#/components/parameters/ServiceIfMatch'
@@ -396,6 +421,111 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /admin/doctors/{id}/image:
+    parameters:
+      - $ref: '#/components/parameters/DoctorId'
+    put:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: putDoctorImage
+      summary: Set or replace a doctor photo with alt text in every language
+      description: |
+        ADMIN only (DP-06, DP-07). Same image rules as service images (SI-02, SI-05). The doctor
+        needs a saved profile in km, en and zh first. The new photo is live only after the upload
+        and the database update both succeed; a replaced photo is deleted from storage afterwards.
+      parameters:
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image, altTexts]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: JPEG, PNG, or WebP up to 5 MiB and 40 million pixels.
+                altTexts:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  description: Sent as an application/json part. One entry per km, en and zh.
+                  items:
+                    $ref: '#/components/schemas/ServiceImageAltText'
+            encoding:
+              altTexts:
+                contentType: application/json
+      responses:
+        '200':
+          description: Saved profile with the new photo
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfileWrapper'
+        '400':
+          description: Missing parts, bad alt texts, or undecodable image (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown doctor (DOCTOR_NOT_FOUND)
+        '409':
+          description: Doctor lacks a profile in km, en or zh (TRANSLATION_MISSING)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '413':
+          description: Image exceeds 5 MiB (IMAGE_TOO_LARGE)
+        '415':
+          description: Image is not JPEG, PNG, or WebP (UNSUPPORTED_IMAGE)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+        '503':
+          description: Media storage unavailable (STORAGE_UNAVAILABLE)
+    delete:
+      tags: [Doctor Management]
+      security:
+        - BearerAuth: []
+      operationId: deleteDoctorImage
+      summary: Remove a doctor photo and its alt text
+      description: The website shows its fallback picture (DP-11). Deleting when there is no photo changes nothing.
+      parameters:
+        - $ref: '#/components/parameters/ServiceIfMatch'
+      responses:
+        '200':
+          description: Saved profile without a photo
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DoctorProfileWrapper'
+        '401':
+          description: Sign-in required
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: Unknown doctor (DOCTOR_NOT_FOUND)
         '412':
           description: If-Match is not the current version (VERSION_MISMATCH)
         '428':
@@ -2295,7 +2425,7 @@ components:
         imageUrl:
           type: [string, 'null']
           format: uri
-          description: Phase 2; null until doctor photos are supported.
+          description: Signed URL valid for five minutes (DP-06); null when the doctor has no photo.
         imageAltText:
           type: [string, 'null']
           maxLength: 200
@@ -2331,8 +2461,31 @@ components:
       allOf:
         - $ref: '#/components/schemas/PublicDoctorSummary'
         - type: object
-          required: [serviceSlugs]
+          required: [bio, education, tags, experienceYears, publicationsCount, serviceSlugs]
+          description: Every doctor card field (DP-09). Translated values are in the requested language.
           properties:
+            bio:
+              type: [string, 'null']
+              maxLength: 3000
+            education:
+              type: [string, 'null']
+              maxLength: 500
+            tags:
+              type: array
+              maxItems: 5
+              description: Empty array when there are none, never null (DP-02).
+              items:
+                type: string
+                minLength: 1
+                maxLength: 40
+            experienceYears:
+              type: [integer, 'null']
+              minimum: 0
+              description: Current year in Asia/Phnom_Penh minus practiceStartYear; null when not set (DP-03).
+            publicationsCount:
+              type: [integer, 'null']
+              minimum: 0
+              maximum: 10000
             serviceSlugs:
               type: array
               items:
@@ -2351,11 +2504,8 @@ components:
       allOf:
         - $ref: '#/components/schemas/PublicDoctor'
         - type: object
-          required: [bio, services]
+          required: [services]
           properties:
-            bio:
-              type: [string, 'null']
-              maxLength: 3000
             services:
               type: array
               items:
@@ -2378,13 +2528,23 @@ components:
 
     DoctorProfileWrite:
       type: object
-      required: [slug, translations]
+      required: [slug, practiceStartYear, publicationsCount, translations]
       properties:
         slug:
           type: string
           pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
           minLength: 1
           maxLength: 80
+        practiceStartYear:
+          type: [integer, 'null']
+          minimum: 1950
+          description: Up to the current year in Asia/Phnom_Penh (DP-03).
+          example: 2010
+        publicationsCount:
+          type: [integer, 'null']
+          minimum: 0
+          maximum: 10000
+          example: 12
         translations:
           type: array
           minItems: 3
@@ -2392,7 +2552,7 @@ components:
           description: Exactly one entry each for km, en and zh.
           items:
             type: object
-            required: [languageCode, title, bio]
+            required: [languageCode, title, bio, education, tags]
             properties:
               languageCode:
                 $ref: '#/components/schemas/LanguageCode'
@@ -2404,6 +2564,23 @@ components:
                 type: [string, 'null']
                 minLength: 1
                 maxLength: 3000
+              education:
+                type: [string, 'null']
+                minLength: 1
+                maxLength: 500
+              tags:
+                type: array
+                maxItems: 5
+                uniqueItems: true
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 40
+              imageAltText:
+                type: [string, 'null']
+                minLength: 1
+                maxLength: 200
+                description: Only when the doctor has a photo. Absent or null keeps the saved alt text (DP-08).
 
     DoctorProfileWrapper:
       type: object
@@ -2413,11 +2590,15 @@ components:
           allOf:
             - $ref: '#/components/schemas/DoctorProfileWrite'
             - type: object
-              required: [doctorId, serviceIds, version]
+              required: [doctorId, imageUrl, serviceIds, version]
               properties:
                 doctorId:
                   type: string
                   format: uuid
+                imageUrl:
+                  type: [string, 'null']
+                  format: uri
+                  description: Signed URL valid for five minutes; null when there is no photo.
                 serviceIds:
                   type: array
                   items:

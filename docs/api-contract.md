@@ -1288,6 +1288,169 @@ in all three languages, otherwise `409 SERVICE_TRANSLATION_MISSING`.
 2. Should related doctors limit which doctors reception may assign on confirm? This revision says no.
 
 
+## Doctor profile details and photos - revision, November 19, 2026
+
+> **Status:** Proposed. Awaits Team Lead approval through PR review in both repositories.
+> Extends the [public catalogue](#public-catalogue-prices-doctor-profiles-and-service-details---revision-november-19-2026)
+> revision (PC) so the website's doctor card can come from the API instead of bundled data.
+> Replaces PC-05's "a doctor photo is phase 2". Photo rules, storage and cleanup follow
+> [service images](#service-images-phase-2a--approved-november-18-2026) (SI-01 to SI-07).
+> Roles, booking, appointment and visit transitions are unchanged. No doctor login is introduced.
+
+### Why
+
+The doctor card on the homepage and the doctor profile page show a photo, a role, specialty
+tags, a bio, education, years of experience and a publication count. PC only covers the
+slug, role (`title`) and bio. This revision adds the remaining fields and the photo.
+
+### Field map
+
+| Website card | API field | Stored in | Translated |
+| --- | --- | --- | --- |
+| Name | `fullName` | `doctor.full_name` (exists) | No (PC-05) |
+| Profile link | `slug` | `doctor.slug` (PC-05) | No |
+| Role | `title` | `doctor_translation.title` (PC-05) | Yes |
+| Bio | `bio` | `doctor_translation.bio` (PC-05) | Yes |
+| Education | `education` | `doctor_translation.education` (new) | Yes |
+| Tags | `tags` | `doctor_translation.tags` (new) | Yes |
+| Years of experience | `experienceYears` | derived from `doctor.practice_start_year` (new) | No |
+| Publications | `publicationsCount` | `doctor.publications_count` (new) | No |
+| Photo | `imageUrl` | `doctor.image_media_id` → `cms_media` (new) | No |
+| Photo alt text | `imageAltText` | `doctor_translation.image_alt_text` (new) | Yes |
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| DP-01 | Education | Per language, `education` is plain text, 1–500 characters, or `null`. |
+| DP-02 | Tags | Per language, `tags` is an array of 0–5 distinct strings, 1–40 characters each, in display order. `[]` when there are none, never `null`. Tag counts may differ between languages. |
+| DP-03 | Experience | The admin sets `practiceStartYear` (1950 to the current year in `Asia/Phnom_Penh`, or `null`). Public responses return `experienceYears = currentYear - practiceStartYear`, or `null` when the start year is not set. The number is never stored, so it stays correct each year. |
+| DP-04 | Publications | `publicationsCount` is 0–10000 or `null`. The website hides the stat when it is `null`. |
+| DP-05 | Specialties | No separate specialties field. A doctor's specialties are the linked services (PC-06). |
+| DP-06 | Photo | One photo per doctor, shared by all languages, with alt text in each language. Image rules, storage, signed URL (five minutes), replacement and cleanup follow SI-02 and SI-05. Setting a photo requires alt text in `km`, `en` and `zh`, 1–200 characters each. |
+| DP-07 | Photo needs a profile | A doctor must already have a saved profile (PC-05) in all three languages before a photo is set; otherwise `409 TRANSLATION_MISSING`. |
+| DP-08 | Alt text only | The profile `PUT` accepts `imageAltText` per translation when the doctor has a photo. Absent or `null` keeps the saved alt text. Sending it for a doctor without a photo is `400 VALIDATION_ERROR`. Removing the photo clears every alt text. |
+| DP-09 | Public list carries the card | **Changes PC's list item.** `GET /public/doctors` returns every card field (`bio`, `education`, `tags`, `experienceYears`, `publicationsCount`, photo), so the homepage card needs no request per doctor. The detail adds `services` only. The doctor summary inside a service detail stays as in PC. |
+| DP-10 | Who edits | `ADMIN` only (PC-07). |
+| DP-11 | Website fallback | When `imageUrl` is `null`, the website shows its bundled fallback doctor picture. |
+| DP-12 | Reading a profile | `GET /api/v1/admin/doctors/{id}/profile` returns the admin profile body and `ETag`, so the editor can load it. `slug` is `null` and `translations` is `[]` until a profile is saved. |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/public/doctors?lang= | Public (changed: card fields, DP-09) |
+| GET | /api/v1/public/doctors/{slug}?lang= | Public (changed: card fields) |
+| GET | /api/v1/admin/doctors/{id}/profile | ADMIN (new, DP-12) |
+| PUT | /api/v1/admin/doctors/{id}/profile | ADMIN, `If-Match` required (changed: new fields) |
+| PUT | /api/v1/admin/doctors/{id}/image | ADMIN, `If-Match` required (new) |
+| DELETE | /api/v1/admin/doctors/{id}/image | ADMIN, `If-Match` required (new) |
+
+### `GET /api/v1/public/doctors?lang=en`
+
+```json
+{
+  "data": [
+    {
+      "slug": "dr-sok",
+      "fullName": "Dr. Sok",
+      "title": "Gastroenterologist",
+      "bio": "Dr. Sok has fifteen years of experience in digestive health.",
+      "education": "MD, University of Health Sciences, Phnom Penh",
+      "tags": ["Endoscopy", "Digestive health"],
+      "experienceYears": 16,
+      "publicationsCount": 12,
+      "imageUrl": "https://<r2-signed-url>",
+      "imageAltText": "Dr. Sok in a white coat",
+      "serviceSlugs": ["colonoscopy", "gastroscopy"]
+    }
+  ]
+}
+```
+
+- Every field is present; optional values are `null`, never omitted. `tags` is `[]`, never `null`.
+- `GET /public/doctors/{slug}` returns the same item plus `services` (PC).
+- With `?lang=km` every translated field (`title`, `bio`, `education`, `tags`,
+  `imageAltText`) is the Khmer value. No fallback language (I18N-01, I18N-02).
+
+### `PUT /api/v1/admin/doctors/{id}/profile`
+
+```json
+{
+  "slug": "dr-sok",
+  "practiceStartYear": 2010,
+  "publicationsCount": 12,
+  "translations": [
+    { "languageCode": "km", "title": "…", "bio": "…", "education": "…", "tags": ["…"], "imageAltText": null },
+    { "languageCode": "en", "title": "Gastroenterologist", "bio": "…", "education": "MD, University of Health Sciences, Phnom Penh", "tags": ["Endoscopy", "Digestive health"], "imageAltText": null },
+    { "languageCode": "zh", "title": "…", "bio": null, "education": null, "tags": [], "imageAltText": null }
+  ]
+}
+```
+
+- PC-05 rules for `slug`, `title` and `bio` are unchanged.
+- `practiceStartYear` and `publicationsCount` are required keys whose value may be `null`.
+- `education` and `tags` are required keys in each translation; `imageAltText` is optional (DP-08).
+- Response `200` with the profile, `imageUrl`, `serviceIds` and a new `ETag`.
+
+### `PUT /api/v1/admin/doctors/{id}/image`
+
+`multipart/form-data` with the same parts as `PUT /admin/services/{id}/image`: `image` (JPEG,
+PNG or WebP, up to 5 MiB and 40 million pixels) and `altTexts` (`application/json`, exactly
+three `{ "languageCode", "imageAltText" }`, one per `km`, `en`, `zh`). The doctor switches to
+the new photo only after the R2 upload and the PostgreSQL update both succeed. Returns `200`
+with the admin profile body and the new `ETag`.
+
+### `DELETE /api/v1/admin/doctors/{id}/image`
+
+No body. Returns `200` with the admin profile body (`imageUrl: null`, every `imageAltText: null`)
+and the new `ETag`. Deleting when there is no photo changes nothing.
+
+### Errors
+
+As for PC, plus:
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | `practiceStartYear` or `publicationsCount` out of range; `education` too long; too many, empty, long or duplicate tags; missing `image` or `altTexts`; alt text missing, repeated or over 200 characters; `imageAltText` sent for a doctor without a photo; undecodable image |
+| 409 | `TRANSLATION_MISSING` | Photo upload for a doctor without a profile in all three languages (DP-07) |
+| 413 | `IMAGE_TOO_LARGE` | Image larger than 5 MiB |
+| 415 | `UNSUPPORTED_IMAGE` | Image is not JPEG, PNG or WebP |
+| 503 | `STORAGE_UNAVAILABLE` | R2 is unavailable or not configured |
+
+### Migration
+
+- `doctor` adds `practice_start_year smallint NULL`, `publications_count integer NULL`
+  (`CHECK` 0–10000) and `image_media_id uuid NULL REFERENCES clinic.cms_media (id)`.
+- `doctor_translation` (PC) adds `education varchar(500) NULL`,
+  `tags text[] NOT NULL DEFAULT '{}'` and `image_alt_text varchar(200) NULL`.
+- If the PC migration has not shipped, these columns go into it; otherwise into the next one.
+  Existing doctors get `null` and `[]`, and have no photo.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| `GET /public/doctors?lang=zh` | `200`; each item has every card field, translated values in Chinese |
+| `practiceStartYear: 2010` in 2026 | `experienceYears: 16`; in 2027 it is `17` without an edit |
+| `practiceStartYear: null` | `experienceYears: null` |
+| Save six tags in `en`, or two equal tags | `400 VALIDATION_ERROR` |
+| Save `"tags": []` in `km` | `200`; Khmer card shows no tags |
+| Upload a WebP with three alt texts | `200`; `imageUrl` set in admin and public responses |
+| Upload a photo for a doctor with no `zh` profile | `409 TRANSLATION_MISSING`; nothing stored |
+| Upload a 6 MiB file or a GIF | `413` or `415`; nothing changes |
+| Change only the `km` alt text through the profile `PUT` | `200`; photo and other alt texts unchanged |
+| Remove the photo | `200`; `imageUrl` and every `imageAltText` are `null`; website shows the fallback picture |
+| Two admins upload from the same `ETag` | First `200`; second `412`; second upload discarded |
+
+### Open questions for the Team Lead
+
+1. The current card has a "Book with this doctor" button. Patients do not choose a doctor
+   (BK-02), so this revision expects the button to open the normal booking form with no doctor
+   preselected, or to be relabelled. Confirm which.
+2. Should `fullName` get a Khmer and Chinese spelling? This revision keeps one value (PC-05).
+
+
 ## Packages and package booking - revision, November 19, 2026
 
 Requested by the user to complete the clinic's catalogue rules. Prepared for coordinated
