@@ -17,6 +17,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.AppointmentDetail;
+import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingSlot;
+import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.BookingSlots;
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.PageInfo;
 import com.sokhasaclinic.clinicbackend.appointment.dto.AppointmentDtos.PageResponse;
 import com.sokhasaclinic.clinicbackend.appointment.exception.AppointmentException;
@@ -30,6 +32,7 @@ import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentService.Bo
 import com.sokhasaclinic.clinicbackend.appointment.service.AppointmentSnapshot;
 import com.sokhasaclinic.clinicbackend.appointment.service.BookingCommand;
 import com.sokhasaclinic.clinicbackend.appointment.service.BookingRateLimiter;
+import com.sokhasaclinic.clinicbackend.appointment.service.BookingSlotService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -59,6 +62,7 @@ class AppointmentControllerTests {
     private AppointmentService appointments;
     private AppointmentQueryService queries;
     private BookingRateLimiter rateLimiter;
+    private BookingSlotService slots;
     private MockMvc mvc;
 
     @BeforeEach
@@ -66,8 +70,9 @@ class AppointmentControllerTests {
         appointments = mock(AppointmentService.class);
         queries = mock(AppointmentQueryService.class);
         rateLimiter = mock(BookingRateLimiter.class);
+        slots = mock(BookingSlotService.class);
         mvc = MockMvcBuilders
-                .standaloneSetup(new PublicAppointmentController(appointments, queries, rateLimiter),
+                .standaloneSetup(new PublicAppointmentController(appointments, queries, rateLimiter, slots),
                         new AdminAppointmentController(appointments, queries))
                 .setControllerAdvice(new AppointmentExceptionHandler())
                 .build();
@@ -93,6 +98,39 @@ class AppointmentControllerTests {
         verify(rateLimiter).acquire("203.0.113.7");
         org.junit.jupiter.api.Assertions.assertEquals("km", command.getValue().languageCode());
         org.junit.jupiter.api.Assertions.assertEquals("012 345 678", command.getValue().phone());
+    }
+
+    @Test
+    void exactTimeBodyIsAcceptedAndInvalidTimeFormatsAreRejected() throws Exception {
+        when(appointments.request(any(BookingCommand.class), any())).thenReturn(new BookingResult(snapshot(), false));
+        String exact = BOOKING.replace("\"preferredPeriod\":\"MORNING\"", "\"preferredStartTime\":\"14:30\"");
+        mvc.perform(post("/api/v1/public/appointments").header("Idempotency-Key", KEY)
+                        .contentType(MediaType.APPLICATION_JSON).content(exact))
+                .andExpect(status().isCreated());
+        ArgumentCaptor<BookingCommand> captured = ArgumentCaptor.forClass(BookingCommand.class);
+        verify(appointments).request(captured.capture(), any());
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.LocalTime.of(14, 30), captured.getValue().preferredStartTime());
+        org.junit.jupiter.api.Assertions.assertNull(captured.getValue().preferredPeriod());
+        for (String invalid : List.of("14:15", "25:00", "14:30:00", "2:30 pm")) {
+            mvc.perform(post("/api/v1/public/appointments").header("Idempotency-Key", KEY)
+                            .contentType(MediaType.APPLICATION_JSON).content(exact.replace("14:30", invalid)))
+                    .andExpect(status().isBadRequest());
+        }
+    }
+
+    @Test
+    void slotAvailabilityIsPublicDataWithClinicOffsetAndNoCache() throws Exception {
+        LocalDate date = LocalDate.parse("2026-11-20");
+        when(slots.availability(date, SERVICE)).thenReturn(
+                new BookingSlots(date, "Asia/Phnom_Penh",
+                        List.of(new BookingSlot(
+                                OffsetDateTime.parse("2026-11-20T14:00:00+07:00"), OffsetDateTime.parse("2026-11-20T14:30:00+07:00")))));
+        mvc.perform(get("/api/v1/public/booking-slots").param("date", date.toString()).param("serviceId", SERVICE.toString()))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.data.timeZone").value("Asia/Phnom_Penh"))
+                .andExpect(jsonPath("$.data.slots[0].startAt").value("2026-11-20T14:00:00+07:00"));
+        mvc.perform(get("/api/v1/public/booking-slots").param("date", date.toString()))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -222,13 +260,13 @@ class AppointmentControllerTests {
         Instant now = Instant.parse("2026-11-18T03:05:00Z");
         return new AppointmentSnapshot(ID, "SK-20261120-0007", AppointmentStatus.PENDING, SERVICE, "Sok Dara",
                 "+85512345678", null, "km", "First visit", LocalDate.parse("2026-11-20"), "MORNING", 30, 10,
-                null, null, null, now, now, 0);
+                null, null, null, now, now, 0, null);
     }
 
     private static AppointmentDetail detail() {
         OffsetDateTime created = OffsetDateTime.of(2026, 11, 18, 10, 5, 0, 0, ZoneOffset.ofHours(7));
         return new AppointmentDetail(ID, "SK-20261120-0007", AppointmentStatus.PENDING, "Sok Dara", "+85512345678",
                 "Chronic Disease Management", LocalDate.parse("2026-11-20"), "MORNING", null, null, created,
-                SERVICE, null, "km", null, 30, 10, null, null, created);
+                SERVICE, null, "km", null, 30, 10, null, null, created, null);
     }
 }

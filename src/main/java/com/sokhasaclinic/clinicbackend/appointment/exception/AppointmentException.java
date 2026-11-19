@@ -85,6 +85,10 @@ public class AppointmentException extends RuntimeException {
                 "The requested date and period have no remaining capacity.");
     }
 
+    public static AppointmentException slotUnavailable() {
+        return new AppointmentException(409, "SLOT_UNAVAILABLE", "That time is no longer available. Choose another time.");
+    }
+
     public static AppointmentException doctorUnavailable() {
         return new AppointmentException(409, "DOCTOR_UNAVAILABLE",
                 "The doctor already has an overlapping appointment.");

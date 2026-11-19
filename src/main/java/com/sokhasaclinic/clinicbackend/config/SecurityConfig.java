@@ -73,6 +73,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, PUBLIC_GET_ROUTES).permitAll()
                         // Guests submit booking requests (appointment contract, approved November 18, 2026).
                         .requestMatchers(HttpMethod.POST, "/api/v1/public/appointments").permitAll()
+                        // The existing active-doctor GET is shared; creating resources is admin only.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/admin/doctors").hasRole("ADMIN")
                         // Reception works appointments as well as admins (AP-07).
                         .requestMatchers(RECEPTION_ROUTES).hasAnyRole("ADMIN", "RECEPTION")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")

@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import java.time.Instant;
 import java.util.UUID;
 import lombok.Getter;
@@ -39,7 +40,26 @@ public class Doctor {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
 
+    @Version
+    @Column(nullable = false)
+    private long version;
+
     protected Doctor() {
+    }
+
+    public static Doctor create(String name, DoctorStatus status, int sortOrder, Instant now) {
+        Doctor doctor = new Doctor();
+        doctor.id = UUID.randomUUID();
+        doctor.createdAt = now;
+        doctor.update(name, status, sortOrder, now);
+        return doctor;
+    }
+
+    public void update(String name, DoctorStatus status, int sortOrder, Instant now) {
+        this.fullName = name;
+        this.status = status;
+        this.sortOrder = sortOrder;
+        this.updatedAt = now;
     }
 
     public boolean isActive() {

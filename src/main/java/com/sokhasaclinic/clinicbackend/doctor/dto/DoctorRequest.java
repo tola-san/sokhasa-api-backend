@@ -1,8 +1,10 @@
 package com.sokhasaclinic.clinicbackend.doctor.dto;
 
-/**
- * Define fields and Bean Validation constraints for approved doctor management operations.
- */
-public record DoctorRequest() {
-    // TODO: Add record components and validation constraints after contract approval.
-}
+import com.sokhasaclinic.clinicbackend.doctor.model.DoctorStatus;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+public record DoctorRequest(@NotBlank @Size(max = 120) String fullName,
+        @NotNull DoctorStatus status, @NotNull @Min(0) Integer sortOrder) { }
