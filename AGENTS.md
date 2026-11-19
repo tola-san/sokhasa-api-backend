@@ -23,6 +23,13 @@ Read this file and any applicable directory-specific `AGENTS.md` before editing.
 - New booking requests start at `PENDING` and require receptionist approval. The allowed appointment decisions are `PENDING → CONFIRMED` and `PENDING → REJECTED`.
 - Visits advance through `CONFIRMED → ARRIVED → IN_PROGRESS → COMPLETED`.
 - Prevent appointment double booking and schedule conflicts, including concurrent requests. Obtain Team Lead approval before adding roles, transitions, or approval rules.
+- Services: the public list shows no prices. Each service detail page shows its description, preparation instructions, and related doctors.
+- Doctors: public profiles, linked to the services they provide. Patients do not choose a doctor; the receptionist assigns one.
+- Packages: show the price, included services, exclusions, and preparation instructions.
+- Booking: one service or one package creates one `PENDING` appointment for receptionist review.
+- Package visits: one appointment per package, using a duration and buffer that the clinic defines for the package.
+
+Contract pending: these rules are specified in the "Public catalogue" (PC) and "Packages and package booking" (PK) revisions of `docs/api-contract.md`. Both await Team Lead approval through PR review. Do not implement the affected endpoints, entities, or migrations until they are approved.
 
 ## API contract
 
