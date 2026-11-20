@@ -5,6 +5,10 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/clinic
       SPRING_DATASOURCE_USERNAME: clinic
       SPRING_DATASOURCE_PASSWORD: localdev
+      TELEGRAM_ENABLED: ${TELEGRAM_ENABLED:-false}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+      TELEGRAM_RETRY_MAX_ATTEMPTS: ${TELEGRAM_RETRY_MAX_ATTEMPTS:-5}
     depends_on:
       postgres:
         condition: service_healthy

@@ -19,6 +19,7 @@ import com.sokhasaclinic.clinicbackend.doctor.repository.DoctorRepository;
 import com.sokhasaclinic.clinicbackend.patient.model.Patient;
 import com.sokhasaclinic.clinicbackend.patient.repository.PatientRepository;
 import com.sokhasaclinic.clinicbackend.patient.service.PhoneNumbers;
+import com.sokhasaclinic.clinicbackend.notification.service.NotificationService;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
@@ -73,6 +74,7 @@ public class AppointmentService {
     private final IdempotencyKeys idempotencyKeys;
     private final Clock clock;
     private final BookingSlotService slots;
+    private final NotificationService notifications;
 
     @Autowired
     public AppointmentService(
@@ -86,9 +88,10 @@ public class AppointmentService {
             BookingReferences references,
             BookingSettings settings,
             IdempotencyKeys idempotencyKeys,
-            BookingSlotService slots) {
+            BookingSlotService slots,
+            NotificationService notifications) {
         this(appointments, history, periods, periodLock, services, doctors, patients, references, settings,
-                idempotencyKeys, slots, Clock.systemUTC());
+                idempotencyKeys, slots, notifications, Clock.systemUTC());
     }
 
     AppointmentService(
@@ -103,6 +106,7 @@ public class AppointmentService {
             BookingSettings settings,
             IdempotencyKeys idempotencyKeys,
             BookingSlotService slots,
+            NotificationService notifications,
             Clock clock) {
         this.appointments = appointments;
         this.history = history;
@@ -116,6 +120,7 @@ public class AppointmentService {
         this.idempotencyKeys = idempotencyKeys;
         this.clock = clock;
         this.slots = slots;
+        this.notifications = notifications;
     }
 
     /** The result of a booking request; {@code replayed} when the Idempotency-Key was seen before. */
@@ -203,6 +208,7 @@ public class AppointmentService {
         }
         record(appointment, null, Actor.guest(), null, now);
         idempotencyKeys.save(idempotencyKey, requestHash, appointment.getId(), now);
+        notifications.appointmentCreated(AppointmentSnapshot.of(appointment));
         return new BookingResult(AppointmentSnapshot.of(appointment), false);
     }
 
