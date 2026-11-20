@@ -31,7 +31,8 @@ public record AppointmentSnapshot(
         Instant createdAt,
         Instant updatedAt,
         long version,
-        LocalTime preferredStartTime) {
+        LocalTime preferredStartTime,
+        UUID preferredDoctorId) {
 
     static AppointmentSnapshot of(Appointment a) {
         return new AppointmentSnapshot(
@@ -54,6 +55,7 @@ public record AppointmentSnapshot(
                 a.getCreatedAt(),
                 a.getUpdatedAt(),
                 a.getVersion(),
-                a.getPreferredStartTime());
+                a.getPreferredStartTime(),
+                a.getPreferredDoctorId());
     }
 }

@@ -1666,9 +1666,9 @@ is `400 VALIDATION_ERROR`. An unknown or inactive package is `404 PACKAGE_NOT_FO
 
 ## Preferred doctor - revision, November 20, 2026
 
-> **Status:** Direction approved by the Team Lead on November 20, 2026: patients may name an
-> optional, non-binding preferred doctor. This text awaits approval through PR review in both
-> repositories. **Changes AP-06** and the PC business rule "patients still never choose a
+> **Status:** Approved by the Team Lead on November 20, 2026, including PD-01 to PD-10: patients
+> may name an optional, non-binding preferred doctor. Implemented with the PRs that add this
+> section in both repositories. **Changes AP-06** and the PC business rule "patients still never choose a
 > doctor". BK-02 is unchanged: the receptionist assigns the doctor on confirm. Roles, appointment
 > and visit transitions, and receptionist approval are unchanged. No doctor login is introduced.
 

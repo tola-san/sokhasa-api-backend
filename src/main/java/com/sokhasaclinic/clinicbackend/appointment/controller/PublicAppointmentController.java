@@ -84,7 +84,8 @@ public class PublicAppointmentController {
         BookingResult result = appointments.request(new BookingCommand(
                 body.serviceId(), body.preferredDate(), body.preferredPeriod(), body.language(),
                 body.patient().fullName(), body.patient().phone(), body.patient().email(), body.notes(),
-                body.preferredStartTime() == null ? null : LocalTime.parse(body.preferredStartTime())), key);
+                body.preferredStartTime() == null ? null : LocalTime.parse(body.preferredStartTime()),
+                body.preferredDoctorSlug()), key);
         AppointmentSnapshot booked = result.appointment();
         return ResponseEntity.created(URI.create("/api/v1/admin/appointments/" + booked.id()))
                 .cacheControl(CacheControl.noStore())

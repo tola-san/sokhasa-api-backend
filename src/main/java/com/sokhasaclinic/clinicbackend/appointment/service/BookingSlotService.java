@@ -79,9 +79,21 @@ public class BookingSlotService {
 
     /** Caller holds the period lock. Lock schedule/doctor rows until the reservation commits. */
     public Window reserve(UUID serviceId, LocalDate date, LocalTime time, int total, String period, Instant now) {
+        return reserve(serviceId, date, time, total, period, now, null);
+    }
+
+    /**
+     * As {@link #reserve(UUID, LocalDate, LocalTime, int, String, Instant)}, trying the patient's
+     * preferred doctor first (PD-05). When that doctor has no eligible free window, any eligible
+     * doctor is reserved as before; the preference alone never causes {@code SLOT_UNAVAILABLE}.
+     */
+    public Window reserve(UUID serviceId, LocalDate date, LocalTime time, int total, String period, Instant now,
+            UUID preferredDoctorId) {
         Instant start = date.atTime(time).atZone(ClinicTime.ZONE).toInstant();
         if (!start.isAfter(now) || slots.hasLegacyPending(date, period)) throw AppointmentException.slotUnavailable();
+        // A stable sort keeps the existing doctor/window order for everyone else.
         return slots.windows(serviceId, date, true).stream().filter(w -> fits(w, time, total))
+                .sorted(java.util.Comparator.comparing((Window w) -> !w.doctorId().equals(preferredDoctorId)))
                 .filter(w -> slots.free(w.doctorId(), start, start.plusSeconds(total * 60L), null))
                 .findFirst().orElseThrow(AppointmentException::slotUnavailable);
     }

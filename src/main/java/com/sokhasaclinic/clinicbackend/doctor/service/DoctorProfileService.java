@@ -37,6 +37,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -123,6 +124,17 @@ public class DoctorProfileService {
                 .map(doctor -> publicDoctor(doctor, texts.get(doctor.getId()).get(language), images,
                         linked.getOrDefault(doctor.getId(), List.of())))
                 .toList();
+    }
+
+    /**
+     * PD-02: the id of the public doctor (PC-04) with this slug, if any. Used to check a booking's
+     * preferred doctor; callers run inside their own transaction.
+     */
+    @Transactional(readOnly = true)
+    public Optional<UUID> publicDoctorId(String slug) {
+        return doctors.findBySlugAndStatus(slug, DoctorStatus.ACTIVE)
+                .filter(doctor -> complete(texts(List.of(doctor.getId())).get(doctor.getId())))
+                .map(Doctor::getId);
     }
 
     @Transactional(readOnly = true)

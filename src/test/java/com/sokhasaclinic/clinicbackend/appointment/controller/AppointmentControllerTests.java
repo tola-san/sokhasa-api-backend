@@ -119,6 +119,33 @@ class AppointmentControllerTests {
     }
 
     @Test
+    void preferredDoctorSlugIsPassedOnAndMalformedOrUnknownSlugsFail() throws Exception {
+        when(appointments.request(any(BookingCommand.class), any())).thenReturn(new BookingResult(snapshot(), false));
+        String preferred = BOOKING.replace("\"preferredPeriod\":\"MORNING\"",
+                "\"preferredPeriod\":\"MORNING\",\"preferredDoctorSlug\":\"dr-sok\"");
+        mvc.perform(post("/api/v1/public/appointments").header("Idempotency-Key", KEY)
+                        .contentType(MediaType.APPLICATION_JSON).content(preferred))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.preferredDoctorSlug").doesNotExist());
+        ArgumentCaptor<BookingCommand> captured = ArgumentCaptor.forClass(BookingCommand.class);
+        verify(appointments).request(captured.capture(), any());
+        org.junit.jupiter.api.Assertions.assertEquals("dr-sok", captured.getValue().preferredDoctorSlug());
+
+        for (String invalid : List.of("Dr Sok", "dr--sok", "-dr", "dr-".repeat(30))) {
+            mvc.perform(post("/api/v1/public/appointments").header("Idempotency-Key", KEY)
+                            .contentType(MediaType.APPLICATION_JSON).content(preferred.replace("dr-sok", invalid)))
+                    .andExpect(status().isBadRequest());
+        }
+
+        when(appointments.request(any(BookingCommand.class), any()))
+                .thenThrow(AppointmentException.doctorNotFound());
+        mvc.perform(post("/api/v1/public/appointments").header("Idempotency-Key", KEY)
+                        .contentType(MediaType.APPLICATION_JSON).content(preferred))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.type").value("DOCTOR_NOT_FOUND"));
+    }
+
+    @Test
     void slotAvailabilityIsPublicDataWithClinicOffsetAndNoCache() throws Exception {
         LocalDate date = LocalDate.parse("2026-11-20");
         when(slots.availability(date, SERVICE)).thenReturn(
@@ -260,13 +287,13 @@ class AppointmentControllerTests {
         Instant now = Instant.parse("2026-11-18T03:05:00Z");
         return new AppointmentSnapshot(ID, "SK-20261120-0007", AppointmentStatus.PENDING, SERVICE, "Sok Dara",
                 "+85512345678", null, "km", "First visit", LocalDate.parse("2026-11-20"), "MORNING", 30, 10,
-                null, null, null, now, now, 0, null);
+                null, null, null, now, now, 0, null, null);
     }
 
     private static AppointmentDetail detail() {
         OffsetDateTime created = OffsetDateTime.of(2026, 11, 18, 10, 5, 0, 0, ZoneOffset.ofHours(7));
         return new AppointmentDetail(ID, "SK-20261120-0007", AppointmentStatus.PENDING, "Sok Dara", "+85512345678",
                 "Chronic Disease Management", LocalDate.parse("2026-11-20"), "MORNING", null, null, created,
-                SERVICE, null, "km", null, 30, 10, null, null, created, null);
+                SERVICE, null, "km", null, 30, 10, null, null, created, null, null, null);
     }
 }

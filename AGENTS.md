@@ -24,7 +24,7 @@ Read this file and any applicable directory-specific `AGENTS.md` before editing.
 - Visits advance through `CONFIRMED → ARRIVED → IN_PROGRESS → COMPLETED`.
 - Prevent appointment double booking and schedule conflicts, including concurrent requests. Obtain Team Lead approval before adding roles, transitions, or approval rules.
 - Services: the public list shows no prices. Each service detail page shows its description, preparation instructions, and related doctors.
-- Doctors: public profiles, linked to the services they provide. Patients do not choose a doctor; the receptionist assigns one.
+- Doctors: public profiles, linked to the services they provide. Patients may name an optional, non-binding preferred doctor linked to the service; the receptionist assigns the doctor on confirm and may choose another ("Preferred doctor" (PD) revision, approved by the Team Lead on November 20, 2026).
 - Packages: show the price, included services, exclusions, and preparation instructions.
 - Booking: one service or one package creates one `PENDING` appointment for receptionist review.
 - Package visits: one appointment per package, using a duration and buffer that the clinic defines for the package.
