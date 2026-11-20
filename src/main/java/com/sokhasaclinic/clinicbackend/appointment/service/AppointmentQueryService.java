@@ -20,6 +20,7 @@ import com.sokhasaclinic.clinicbackend.clinicservice.model.ServiceStatus;
 import com.sokhasaclinic.clinicbackend.clinicservice.repository.ClinicServiceRepository;
 import com.sokhasaclinic.clinicbackend.clinicservice.repository.ClinicServiceTranslationRepository;
 import com.sokhasaclinic.clinicbackend.common.time.ClinicTime;
+import com.sokhasaclinic.clinicbackend.doctor.model.Doctor;
 import com.sokhasaclinic.clinicbackend.doctor.model.DoctorStatus;
 import com.sokhasaclinic.clinicbackend.doctor.repository.DoctorRepository;
 import jakarta.persistence.criteria.Expression;
@@ -116,8 +117,11 @@ public class AppointmentQueryService {
         Page<Appointment> result = appointments.findAll(specification(filter),
                 PageRequest.of(page, size, Sort.by("createdAt", "id")));
         Map<UUID, String> names = serviceNames(result.getContent().stream().map(a -> a.getService().getId()).toList());
+        Map<UUID, String> preferred = doctorNames(result.getContent().stream()
+                .map(Appointment::getPreferredDoctorId).toList());
         List<AppointmentListItem> items = result.getContent().stream()
-                .map(a -> listItem(a, names.getOrDefault(a.getService().getId(), "")))
+                .map(a -> listItem(a, names.getOrDefault(a.getService().getId(), ""),
+                        preferred.get(a.getPreferredDoctorId())))
                 .toList();
         return new PageResponse<>(items,
                 new PageInfo(result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages()));
@@ -126,7 +130,9 @@ public class AppointmentQueryService {
     public VersionedDetail detail(UUID id) {
         Appointment a = appointments.findWithDoctor(id).orElseThrow(AppointmentException::appointmentNotFound);
         String serviceName = serviceNames(List.of(a.getService().getId())).getOrDefault(a.getService().getId(), "");
-        AppointmentListItem item = listItem(a, serviceName);
+        String preferredName = a.getPreferredDoctorId() == null ? null
+                : doctorNames(List.of(a.getPreferredDoctorId())).get(a.getPreferredDoctorId());
+        AppointmentListItem item = listItem(a, serviceName, preferredName);
         AppointmentDetail detail = new AppointmentDetail(
                 item.id(), item.reference(), item.status(), item.patientName(), item.patientPhone(),
                 item.serviceName(), item.preferredDate(), item.preferredPeriod(), item.doctorName(),
@@ -134,7 +140,8 @@ public class AppointmentQueryService {
                 a.getService().getId(), a.getPatientEmail(), a.getLanguageCode(), a.getNotes(),
                 a.getDurationMinutes(), a.getBufferMinutes(),
                 a.getDoctor() == null ? null : a.getDoctor().getId(),
-                clinicTime(a.getEndAt()), clinicTime(a.getUpdatedAt()), requestedTime(a));
+                clinicTime(a.getEndAt()), clinicTime(a.getUpdatedAt()), requestedTime(a),
+                a.getPreferredDoctorId(), preferredName);
         return new VersionedDetail(detail, a.getVersion());
     }
 
@@ -237,12 +244,22 @@ public class AppointmentQueryService {
         return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
-    private AppointmentListItem listItem(Appointment a, String serviceName) {
+    private AppointmentListItem listItem(Appointment a, String serviceName, String preferredDoctorName) {
         return new AppointmentListItem(
                 a.getId(), a.getReference(), a.getStatus(), a.getPatientName(), a.getPatientPhone(), serviceName,
                 a.getPreferredDate(), a.getPreferredPeriod(),
                 a.getDoctor() == null ? null : a.getDoctor().getFullName(),
-                clinicTime(a.getStartAt()), clinicTime(a.getCreatedAt()), requestedTime(a));
+                clinicTime(a.getStartAt()), clinicTime(a.getCreatedAt()), requestedTime(a), preferredDoctorName);
+    }
+
+    /** PD-07: current full names of preferred doctors, whatever their status or visibility. */
+    private Map<UUID, String> doctorNames(Collection<UUID> doctorIds) {
+        Set<UUID> ids = doctorIds.stream().filter(java.util.Objects::nonNull).collect(Collectors.toSet());
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        return doctors.findAllById(ids).stream()
+                .collect(Collectors.toMap(Doctor::getId, Doctor::getFullName));
     }
 
     private Map<UUID, String> serviceNames(Collection<UUID> serviceIds) {

@@ -35,7 +35,10 @@ public final class AppointmentDtos {
             @NotNull @Valid Patient patient,
             @Size(max = 500) String notes,
             @Pattern(regexp = "(?:[01][0-9]|2[0-3]):(?:00|30)")
-            String preferredStartTime) {
+            String preferredStartTime,
+            /** PD-01: optional, non-binding preferred doctor, by public slug. */
+            @Size(max = 80) @Pattern(regexp = "[a-z0-9]+(?:-[a-z0-9]+)*")
+            String preferredDoctorSlug) {
     }
 
     public record Patient(
@@ -75,7 +78,9 @@ public final class AppointmentDtos {
             String doctorName,
             OffsetDateTime startAt,
             OffsetDateTime createdAt,
-            String preferredStartTime) {
+            String preferredStartTime,
+            /** PD-07: current full name of the patient's preferred doctor; null when none. */
+            String preferredDoctorName) {
     }
 
     /** {@code GET /admin/appointments/{id}}: the list fields and the rest of the appointment. */
@@ -100,7 +105,10 @@ public final class AppointmentDtos {
             UUID doctorId,
             OffsetDateTime endAt,
             OffsetDateTime updatedAt,
-            String preferredStartTime) {
+            String preferredStartTime,
+            /** PD-03, PD-07: the patient's preferred doctor; never overwritten; null when none. */
+            UUID preferredDoctorId,
+            String preferredDoctorName) {
     }
 
     public record PageInfo(int number, int size, long totalElements, int totalPages) {

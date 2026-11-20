@@ -72,6 +72,10 @@ public class Appointment {
     @Column(name = "preferred_start_time", updatable = false)
     private LocalTime preferredStartTime;
 
+    /** PD-03: the patient's optional, non-binding preferred doctor; never overwritten. */
+    @Column(name = "preferred_doctor_id", updatable = false)
+    private UUID preferredDoctorId;
+
     @Column(name = "booking_window_id", updatable = false)
     private UUID bookingWindowId;
 
@@ -162,6 +166,14 @@ public class Appointment {
         reservedDoctorId = doctorId;
         reservedStartAt = start;
         reservedEndAt = start.plusSeconds(durationMinutes * 60L);
+    }
+
+    /** PD-01: records the patient's preferred doctor on a new request, before it is first saved. */
+    public void preferDoctor(UUID doctorId) {
+        if (status != AppointmentStatus.PENDING || preferredDoctorId != null) {
+            throw new IllegalStateException("Only a new pending request can record a preferred doctor.");
+        }
+        preferredDoctorId = doctorId;
     }
 
     private void clearReservation() {

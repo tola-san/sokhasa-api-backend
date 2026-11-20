@@ -16,6 +16,8 @@ import com.sokhasaclinic.clinicbackend.clinicservice.repository.ClinicServiceRep
 import com.sokhasaclinic.clinicbackend.common.time.ClinicTime;
 import com.sokhasaclinic.clinicbackend.doctor.model.Doctor;
 import com.sokhasaclinic.clinicbackend.doctor.repository.DoctorRepository;
+import com.sokhasaclinic.clinicbackend.doctor.repository.ServiceDoctorLinks;
+import com.sokhasaclinic.clinicbackend.doctor.service.DoctorProfileService;
 import com.sokhasaclinic.clinicbackend.patient.model.Patient;
 import com.sokhasaclinic.clinicbackend.patient.repository.PatientRepository;
 import com.sokhasaclinic.clinicbackend.patient.service.PhoneNumbers;
@@ -75,6 +77,8 @@ public class AppointmentService {
     private final Clock clock;
     private final BookingSlotService slots;
     private final NotificationService notifications;
+    private final DoctorProfileService doctorProfiles;
+    private final ServiceDoctorLinks serviceDoctors;
 
     @Autowired
     public AppointmentService(
@@ -89,9 +93,11 @@ public class AppointmentService {
             BookingSettings settings,
             IdempotencyKeys idempotencyKeys,
             BookingSlotService slots,
-            NotificationService notifications) {
+            NotificationService notifications,
+            DoctorProfileService doctorProfiles,
+            ServiceDoctorLinks serviceDoctors) {
         this(appointments, history, periods, periodLock, services, doctors, patients, references, settings,
-                idempotencyKeys, slots, notifications, Clock.systemUTC());
+                idempotencyKeys, slots, notifications, doctorProfiles, serviceDoctors, Clock.systemUTC());
     }
 
     AppointmentService(
@@ -107,6 +113,8 @@ public class AppointmentService {
             IdempotencyKeys idempotencyKeys,
             BookingSlotService slots,
             NotificationService notifications,
+            DoctorProfileService doctorProfiles,
+            ServiceDoctorLinks serviceDoctors,
             Clock clock) {
         this.appointments = appointments;
         this.history = history;
@@ -121,6 +129,8 @@ public class AppointmentService {
         this.clock = clock;
         this.slots = slots;
         this.notifications = notifications;
+        this.doctorProfiles = doctorProfiles;
+        this.serviceDoctors = serviceDoctors;
     }
 
     /** The result of a booking request; {@code replayed} when the Idempotency-Key was seen before. */
@@ -159,6 +169,10 @@ public class AppointmentService {
         // Replay before mutable service/schedule/window checks: a successful booking must still
         // replay after midnight or a service-duration edit while its key is retained.
         String selector = exact ? "TIME:" + command.preferredStartTime() : command.preferredPeriod();
+        String preferredSlug = command.preferredDoctorSlug() == null || command.preferredDoctorSlug().isBlank()
+                ? null : command.preferredDoctorSlug().strip();
+        // PD-09: the preference is part of the request. Requests without one keep their old hash.
+        if (preferredSlug != null) selector += "\u001fDOCTOR:" + preferredSlug;
         String requestHash = RequestHash.of(command.serviceId(), date, selector, details);
         idempotencyKeys.lock(idempotencyKey);
         Optional<IdempotencyKeys.StoredKey> stored = idempotencyKeys.find(idempotencyKey);
@@ -181,6 +195,7 @@ public class AppointmentService {
                     "Choose a date within the next " + windowDays + " days.");
         }
         ClinicService service = findBookableService(command.serviceId());
+        UUID preferredDoctorId = preferredSlug == null ? null : preferredDoctor(preferredSlug, service.getId());
         BookingPeriod period = exact
                 ? slots.period(command.preferredStartTime(), service.getDurationMinutes() + service.getBufferMinutes())
                 : findPeriod(command.preferredPeriod());
@@ -195,8 +210,10 @@ public class AppointmentService {
         Instant now = clock.instant();
         Patient patient = findOrCreatePatient(details.fullName(), details.phone(), now);
         Appointment appointment = Appointment.request(patient, service, references.next(date), details, date, period, now);
+        if (preferredDoctorId != null) appointment.preferDoctor(preferredDoctorId);
         if (exact) {
-            var window = slots.reserve(service.getId(), date, command.preferredStartTime(), needed, period.getCode(), now);
+            var window = slots.reserve(service.getId(), date, command.preferredStartTime(), needed, period.getCode(), now,
+                    preferredDoctorId);
             appointment.reserve(window.id(), window.doctorId(), command.preferredStartTime(),
                     date.atTime(command.preferredStartTime()).atZone(ClinicTime.ZONE).toInstant());
         }
@@ -395,6 +412,19 @@ public class AppointmentService {
         return Optional.ofNullable(code)
                 .flatMap(periods::findById)
                 .orElseThrow(() -> AppointmentException.invalidField("preferredPeriod", "Choose a valid period."));
+    }
+
+    /**
+     * PD-02: a preferred doctor must be public (PC-04), else {@code 404 DOCTOR_NOT_FOUND}, and linked
+     * to the requested service (PC-06), else {@code 400} on {@code preferredDoctorSlug}.
+     */
+    private UUID preferredDoctor(String slug, UUID serviceId) {
+        UUID doctorId = doctorProfiles.publicDoctorId(slug).orElseThrow(AppointmentException::doctorNotFound);
+        if (!serviceDoctors.doctorIds(serviceId).contains(doctorId)) {
+            throw AppointmentException.invalidField("preferredDoctorSlug",
+                    "Choose a doctor who provides this service, or no preference.");
+        }
+        return doctorId;
     }
 
     private ClinicService findBookableService(UUID serviceId) {
