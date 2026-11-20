@@ -1941,3 +1941,149 @@ Enabling patient updates with any of these missing fails startup, like the staff
 1. Real clinic name, address and phone for the messages.
 2. Reminder time: 17:00 the day before, or another time?
 3. Khmer and Chinese wording: who reviews the translations before release?
+
+
+## Dashboard statistics - revision, November 20, 2026
+
+> **Status:** Pending Team Lead approval through PR review, including DS-01 to DS-12. Do not
+> implement until approved. Adds two read-only routes for the admin dashboard. Builds on the
+> dashboard summary (AP route 11), the status history (AP-09) and doctor booking windows
+> (Doctor and schedule management revision). Roles, appointment and visit transitions, and
+> receptionist approval are unchanged. No doctor login is introduced.
+
+### Why
+
+The admin dashboard shows today's counts, pending requests and the next patient from approved
+routes. Its appointments chart, "Top services" and "Doctors on duty" panels still have no data
+source. `GET /admin/appointments` cannot replace one: it pages at most 100 items, its date range
+is at most 62 days, and it filters by visit date, not by when a request was made. Counting in
+the browser would also send every patient's name and phone to draw a bar chart. These routes
+return totals only, computed in SQL.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| DS-01 | Ranges | `range` is required: `WEEK` is the last 7 clinic days including today, one bucket per day; `MONTH` is the last 12 calendar months including the current one, one bucket per month; `YEAR` is the last 5 calendar years including the current one, one bucket per year. The current bucket is partial. |
+| DS-02 | Clinic time | Days, months and years follow Asia/Phnom_Penh (BK-08), so a request made at 00:30 clinic time counts on that clinic day. |
+| DS-03 | Requested | Appointments whose `createdAt` falls in the bucket, whatever their status now. Rejected requests count. |
+| DS-04 | Confirmed and completed | Status-history rows (AP-09) with `toStatus` `CONFIRMED` or `COMPLETED` whose `changedAt` falls in the bucket. Counts the work done in that period, so a request made in one month and confirmed in the next counts as confirmed in the next. |
+| DS-05 | Empty buckets | Every bucket in the range is returned, oldest first, with `0` where there is no activity, so the chart has no gaps. |
+| DS-06 | Top services | Requests (DS-03) in the whole range grouped by service: the three highest counts, ties broken by English service name, then one `Others` entry (`serviceId: null`) for the rest when it is above `0`. `share` is the percentage of all requests in the range, rounded to one decimal, so shares may add up to 99.9 or 100.1. Service names are in English, the staff language. |
+| DS-07 | Packages | Not included until the Packages (PK) revision is approved. That revision decides whether package requests count in `requested` and appear as their own entries in top services. |
+| DS-08 | Doctors today | Active doctors who have a booking window today or an appointment starting today (confirmed or later). Each doctor's `windows` are the day's booking windows merged across services, so overlapping or touching windows become one interval. |
+| DS-09 | Patients per doctor | `patients` counts the doctor's appointments starting today with status `CONFIRMED`, `ARRIVED`, `IN_PROGRESS` or `COMPLETED`. `inVisit` is true while one of them is `IN_PROGRESS`. |
+| DS-10 | Duty status | Not returned. The dashboard derives "On duty", "Between windows" or "Finished" from `windows` and the current clinic time, so the label stays correct without reloading. |
+| DS-11 | Access | ADMIN and RECEPTION, as for the summary (AP-07). Totals only: no patient names or phone numbers. `Cache-Control: no-store`. |
+| DS-12 | Performance | One grouped query per series and one for top services; new indexes in the migration. Values are computed per request; no stored aggregates. |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/admin/dashboard/stats?range=WEEK\|MONTH\|YEAR | ADMIN, RECEPTION |
+| GET | /api/v1/admin/dashboard/doctors-today | ADMIN, RECEPTION |
+
+### `GET /api/v1/admin/dashboard/stats?range=WEEK`
+
+```json
+{
+  "data": {
+    "range": "WEEK",
+    "from": "2026-11-14",
+    "to": "2026-11-20",
+    "series": [
+      { "periodStart": "2026-11-14", "requested": 12, "confirmed": 9, "completed": 7 },
+      { "periodStart": "2026-11-15", "requested": 0, "confirmed": 0, "completed": 0 },
+      { "periodStart": "2026-11-20", "requested": 5, "confirmed": 3, "completed": 1 }
+    ],
+    "totalRequested": 61,
+    "topServices": [
+      { "serviceId": "3f1c…", "serviceName": "General checkup", "count": 24, "share": 39.3 },
+      { "serviceId": "8a2d…", "serviceName": "Laboratory", "count": 14, "share": 23.0 },
+      { "serviceId": "5b7e…", "serviceName": "Preventive screening", "count": 12, "share": 19.7 },
+      { "serviceId": null, "serviceName": "Others", "count": 11, "share": 18.0 }
+    ]
+  }
+}
+```
+
+The example shortens `series`; `WEEK` always has 7 entries, `MONTH` 12 and `YEAR` 5.
+`periodStart` is the first day of the bucket (`2026-11-01` for November, `2026-01-01` for 2026);
+the dashboard formats it as "Fri", "Nov" or "2026". `from` and `to` are the first and last clinic
+days of the range. With no requests in the range, `totalRequested` is `0` and `topServices` is `[]`.
+
+### `GET /api/v1/admin/dashboard/doctors-today`
+
+```json
+{
+  "data": {
+    "date": "2026-11-20",
+    "doctors": [
+      {
+        "id": "9a7e…",
+        "fullName": "Dr. Sok Vanna",
+        "windows": [
+          { "startTime": "08:00", "endTime": "12:00" },
+          { "startTime": "13:30", "endTime": "17:00" }
+        ],
+        "patients": 3,
+        "inVisit": false
+      }
+    ]
+  }
+}
+```
+
+Doctors are in display order (`sortOrder`, then name). A doctor with appointments today but no
+windows has `windows: []`. Times are strict `HH:mm`, clinic local.
+
+### Errors
+
+No new codes. Problem-details body as for the banner.
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | `range` missing or not `WEEK`, `MONTH` or `YEAR`; `errors[].field = range` |
+| 401 | — | No or expired token |
+| 403 | — | Signed in without ADMIN or RECEPTION |
+
+### Migration
+
+- `CREATE INDEX appointment_created_idx ON clinic.appointment (created_at)` for DS-03; the
+  existing `(status, created_at)` index does not serve a range across all statuses.
+- `CREATE INDEX appointment_history_status_changed_idx ON clinic.appointment_status_history
+  (to_status, changed_at)` for DS-04.
+- `CREATE INDEX doctor_booking_window_day_idx ON clinic.doctor_booking_window (day, doctor_id)`
+  for DS-08.
+- No new tables or columns.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| `range=WEEK` on 2026-11-20 | `200`; `from` 2026-11-14, `to` 2026-11-20, 7 buckets oldest first |
+| `range=MONTH` | 12 buckets, the last one the current month |
+| `range=YEAR` | 5 buckets, the last one the current year |
+| `range` missing or `range=DAY` | `400 VALIDATION_ERROR`, field `range` |
+| A day with no activity | Its bucket is present with all counts `0` |
+| Request made at 23:50 on Nov 19 clinic time | Counts on Nov 19, not Nov 20 |
+| Request made Nov 19, confirmed Nov 20 | `requested` on Nov 19, `confirmed` on Nov 20 |
+| A rejected request | Counts in `requested`; not in `confirmed` |
+| Five services with requests | Three services plus `Others`; shares are percentages of `totalRequested` |
+| Exactly three services with requests | Three entries, no `Others` |
+| No requests in the range | `totalRequested: 0`, `topServices: []` |
+| RECEPTION calls either route | `200` |
+| A guest calls either route | `401` |
+| Doctor with windows 08:00–10:00 and 10:00–12:00 for two services | One window 08:00–12:00 |
+| Doctor with an `IN_PROGRESS` visit | `inVisit: true`; the visit counts in `patients` |
+| Inactive doctor with windows today | Not listed |
+| No doctors working today | `doctors: []` |
+
+### Open questions for the Team Lead
+
+1. Should `confirmed` count confirmations made in the period (DS-04), or the requests from that
+   period that were later confirmed? The first shows reception's workload; the second shows the
+   approval rate per period.
+2. Should the chart also show `rejected`? It is one more count from the same history query.
+3. Is a rolling 7-day `WEEK` right, or should it be the calendar week (Monday to Sunday)?
