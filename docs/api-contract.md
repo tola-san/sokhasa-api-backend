@@ -748,7 +748,7 @@ contract that lets the patient booking form and the reception dashboard use them
 | AP-03 | Duplicate submits | `POST /public/appointments` requires an `Idempotency-Key` header (a UUID from the form). A repeat with the same key and body returns the first response; the same key with a different body returns `409 IDEMPOTENCY_CONFLICT`. Keys are kept for 24 hours. |
 | AP-04 | Patient identity | Patients are matched by phone number, normalised to E.164 (`012 345 678` → `+85512345678`). Each appointment keeps the name and phone as submitted, so a later booking never changes an earlier one. |
 | AP-05 | Patient fields | `fullName` (1–120) and `phone` required; `email` optional (the current form collects it); `notes` optional, up to 500 characters; `language` required (`km`, `en`, `zh`) for later patient messages. |
-| AP-06 | Preferred doctor | Not in the MVP. Reception chooses the doctor when confirming (BK-02), so the public doctor list (draft endpoint 2) is not needed for launch. **Public doctor profiles added by PC-04 (November 19, 2026); patients still do not choose a doctor.** |
+| AP-06 | Preferred doctor | Not in the MVP. Reception chooses the doctor when confirming (BK-02), so the public doctor list (draft endpoint 2) is not needed for launch. **Public doctor profiles added by PC-04 (November 19, 2026). Changed by PD-01 (November 20, 2026): patients may name an optional, non-binding preferred doctor; reception still assigns the doctor.** |
 | AP-07 | Who uses the admin routes | Keycloak `ADMIN` and `RECEPTION`, both with the same access to every route in this section. |
 | AP-08 | Concurrent staff edits | Detail responses carry a strong `ETag` (`"<version>"`). Every `PATCH` requires `If-Match`; a stale value returns `412 VERSION_MISMATCH`, a missing one `428 VERSION_REQUIRED`. Same as banner and service editing. |
 | AP-09 | Status history | Every status change writes one history row (who, when, from, to, reason) in the same transaction. Reception can read it per appointment. |
@@ -1133,7 +1133,8 @@ receptionist approval are unchanged. No doctor login is introduced.
 - Doctors have public profiles and are linked to the services they perform.
 - A service detail page shows its description, preparation and related doctors.
 - Patients still never choose a doctor. The receptionist assigns one on confirm (BK-02).
-  Related doctors are information only.
+  Related doctors are information only. *(Changed by the preferred doctor revision, PD-01 and
+  PD-02: patients may name a linked doctor as a non-binding preference.)*
 
 ### Decisions
 
@@ -1661,3 +1662,116 @@ is `400 VALIDATION_ERROR`. An unknown or inactive package is `404 PACKAGE_NOT_FO
 2. Should packages support exact-time requests? This revision allows periods only (PK-07).
 3. A package longer than a period (for example 300 minutes in a 240-minute morning) can be
    requested but never confirmed. Should the admin editor block it? This revision does not.
+
+
+## Preferred doctor - revision, November 20, 2026
+
+> **Status:** Direction approved by the Team Lead on November 20, 2026: patients may name an
+> optional, non-binding preferred doctor. This text awaits approval through PR review in both
+> repositories. **Changes AP-06** and the PC business rule "patients still never choose a
+> doctor". BK-02 is unchanged: the receptionist assigns the doctor on confirm. Roles, appointment
+> and visit transitions, and receptionist approval are unchanged. No doctor login is introduced.
+
+### Why
+
+Patients see public doctor profiles linked to each service (PC-04, PC-06) and want to ask for
+one of them. Until now the form could only put a preferred doctor in the notes, which reception
+could miss. A stored, optional preference lets reception see it next to the request, while the
+receptionist still decides who treats the patient.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| PD-01 | Request field | `POST /public/appointments` accepts optional `preferredDoctorSlug` (string or `null`). Absent or `null` means no preference. The public API never exposes doctor ids (PC), so the doctor is named by `slug`. |
+| PD-02 | Which doctors | Service requests only. The doctor must be public (PC-04) and linked to the requested service (PC-06), as listed in `GET /public/services/{slug}` `doctors`. An unknown or non-public slug returns `404 DOCTOR_NOT_FOUND`; a public doctor not linked to the service, or any preference with `packageId`, returns `400 VALIDATION_ERROR` with `errors[].field = preferredDoctorSlug`. Nothing is created on failure. |
+| PD-03 | Storage | The appointment stores the doctor's id in `preferred_doctor_id`, so a later slug change does not lose it. Like the preferred date (BK-03) it is never overwritten, including on confirm or reject. |
+| PD-04 | Not binding | The preference reserves nothing and is not an availability check. `GET /public/booking-periods` and `GET /public/booking-slots` are unchanged and do not filter by doctor. Capacity rules (BK, PK-08) are unchanged. |
+| PD-05 | Exact-time requests | When the exact-time revision allocates a doctor interval at submit, it picks the preferred doctor if that doctor has an eligible, free window for the requested start; otherwise it allocates any eligible doctor as before. The preference never causes `409 SLOT_UNAVAILABLE` on its own. |
+| PD-06 | Confirm | Body and rules unchanged (BK-02, PK-09). Reception may assign the preferred doctor or any other active doctor. No reason is required when assigning someone else. |
+| PD-07 | Reception view | Admin list items add `preferredDoctorName` (the doctor's current `fullName`); detail adds `preferredDoctorId`. Both are `null` when there is no preference. The doctor stays visible here even if later made inactive or non-public. |
+| PD-08 | Public response | `BookingConfirmation` is unchanged and does not echo the preference. |
+| PD-09 | Idempotency | The idempotency body includes `preferredDoctorSlug`; the same key with a different preference returns `409 IDEMPOTENCY_CONFLICT` (AP-03). |
+| PD-10 | Website | The booking form offers "No preference" (the default) and the public doctors linked to the chosen service; it hides the choice for packages. The doctor card's "Book with this doctor" button opens the form with that doctor preselected as the preference. This answers open question 1 of the doctor profile revision. |
+
+### Routes
+
+| Method | Route | Change |
+| --- | --- | --- |
+| POST | /api/v1/public/appointments | Accepts `preferredDoctorSlug` |
+| GET | /api/v1/admin/appointments | Items add `preferredDoctorName` |
+| GET | /api/v1/admin/appointments/{id} | Adds `preferredDoctorId` and `preferredDoctorName` |
+
+Status-change routes return the detail body, so they carry the new fields too.
+
+### `POST /api/v1/public/appointments` with a preference
+
+```json
+{
+  "serviceId": "3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d01",
+  "preferredDate": "2026-11-25",
+  "preferredPeriod": "MORNING",
+  "preferredDoctorSlug": "dr-sok",
+  "language": "en",
+  "patient": { "fullName": "Sok Dara", "phone": "012 345 678", "email": null },
+  "notes": null
+}
+```
+
+`201` with the same `BookingConfirmation` as today, `status: PENDING`.
+
+### `GET /api/v1/admin/appointments` item
+
+```json
+{
+  "id": "b2d4…",
+  "reference": "SK-20261125-0003",
+  "status": "PENDING",
+  "serviceName": "Colonoscopy",
+  "preferredDate": "2026-11-25",
+  "preferredPeriod": "MORNING",
+  "preferredDoctorName": "Dr. Sok",
+  "doctorName": null,
+  "startAt": null
+}
+```
+
+Other list fields are as before; only `preferredDoctorName` is new.
+
+### Errors
+
+No new codes.
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | `preferredDoctorSlug` is not a valid slug, names a doctor not linked to the service, or is sent with `packageId` |
+| 404 | `DOCTOR_NOT_FOUND` | `preferredDoctorSlug` is unknown or the doctor is not public |
+| 409 | `IDEMPOTENCY_CONFLICT` | Same `Idempotency-Key`, different `preferredDoctorSlug` |
+
+### Migration
+
+- Flyway adds `appointment.preferred_doctor_id uuid NULL REFERENCES clinic.doctor (id) ON DELETE RESTRICT`
+  and `CHECK (preferred_doctor_id IS NULL OR service_id IS NOT NULL)`.
+- Existing appointments get `null`. Preferences written into old notes stay in the notes.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Book a service with no `preferredDoctorSlug` | `201`, `PENDING`; admin shows `preferredDoctorName: null` |
+| Book with the slug of a public doctor linked to the service | `201`, `PENDING`; admin list shows `preferredDoctorName` |
+| Slug of a public doctor not linked to the service | `400 VALIDATION_ERROR`, field `preferredDoctorSlug`; nothing created |
+| Unknown slug, or an inactive doctor's slug | `404 DOCTOR_NOT_FOUND`; nothing created |
+| Package request with `preferredDoctorSlug` | `400 VALIDATION_ERROR` |
+| Confirm with a different doctor than preferred | `200 CONFIRMED`; `doctorId` is the assigned doctor, `preferredDoctorId` unchanged |
+| Exact request; preferred doctor free at that start | `201`; the reservation holds the preferred doctor |
+| Exact request; preferred doctor busy, another eligible doctor free | `201`; another doctor is reserved |
+| Same `Idempotency-Key`, different preference | `409 IDEMPOTENCY_CONFLICT` |
+| Preferred doctor made inactive after booking | Request unchanged; admin still shows the preference |
+
+### Open questions for the Team Lead
+
+1. Should the patient's preference be shown back on the booking confirmation screen? This
+   revision keeps it out of the API response (PD-08); the form can show what was selected.
+2. Should reception see a hint when the preferred doctor has an overlap at the requested time?
+   This revision adds none; confirm still returns `409 DOCTOR_UNAVAILABLE` on an actual overlap.
