@@ -73,9 +73,11 @@ Run `./mvnw verify` or `.\mvnw.cmd verify` on Windows. The Spring Boot integrati
 Optional backend-only integration. Each new
 booking queues one `APPOINTMENT_CREATED` summary for the configured private reception
 group. It includes the reference, patient name and phone, English service name
-(slug fallback), requested date/time or period, `Pending review`, and submission
-time in `Asia/Phnom_Penh`. Messages contain no buttons, links, patient email or
-medical notes. Receptionists review bookings separately in the authenticated dashboard.
+(slug fallback), requested date/time or period, the preferred doctor when the patient
+chose one, `Pending review`, and submission time in `Asia/Phnom_Penh`. The whole summary
+is one Telegram block quote (HTML parse mode) with bold labels, blank lines between
+groups, and the reference and phone in monospace for tap-to-copy. Every value is
+HTML-escaped. Messages contain no buttons, links, patient email or medical notes. Receptionists review bookings separately in the authenticated dashboard.
 No public endpoints, patient Telegram subscriptions or appointment statuses are added.
 
 1. Create a clinic bot through Telegram's BotFather and add it to a private group
@@ -136,13 +138,37 @@ subscribe to several bookings, but a booking has one immutable recipient; anothe
 insert cannot silently replace that recipient. Revocation preserves the original
 consent and first revocation timestamp. Repository active lookups exclude revoked rows.
 
-This is persistence only. There is no subscription creation endpoint, bot-link
-token flow, Telegram webhook, patient delivery or SSE. Existing staff notifications
-continue to use `notification_job`. Patient notification behavior remains subject
-to the separate decision required by AP-14 in the shared API contract. A future
-approved linking service must verify booking ownership, consent and a private-chat
-Telegram update before saving a subscription; a numeric chat ID is not proof of
-ownership. Patient delivery must check active consent, including when retrying a job.
+The "Patient Telegram updates" revision (PT-01 to PT-12) uses this table; see below.
+
+### Patient Telegram updates
+
+Patients opt in per booking. The booking response carries `telegramLinkUrl`
+(`https://t.me/<bot>?start=<code>`); the website shows it as **Open Telegram** on the
+confirmation screen. When the patient taps START, Telegram sends `/start <code>` to
+`POST /api/v1/telegram/webhook`, which links that **private** chat to the booking and
+replies. Reception then confirms or rejects in the dashboard as usual, and the patient
+gets a message in the booking's language (km, en, zh); a reminder is queued at 17:00
+the day before a confirmed visit. `/stop` revokes every subscription of that chat.
+
+- The link code is HMAC-SHA256 of the appointment ID with `TELEGRAM_LINK_SECRET`, so an
+  idempotent replay returns the same link. Only its SHA-256 hash is stored
+  (`appointment_telegram_link`, Flyway V15). Single use; valid for 24 hours.
+- A numeric chat ID is never proof of ownership: only `/start` with a valid code links.
+- Patient messages use the same outbox and retries as staff summaries. The worker
+  re-checks the subscription before every send and marks the job `CANCELLED` after `/stop`.
+- Messages never include notes, email or the staff rejection reason.
+- Khmer and Chinese wording in `PatientMessageFormatter` is a draft for clinic review.
+
+Setup (patient updates are off by default):
+
+1. Staff Telegram must already work (`TELEGRAM_ENABLED`, token, chat ID).
+2. Set `TELEGRAM_PATIENT_UPDATES_ENABLED=true`, `TELEGRAM_BOT_USERNAME` (without `@`),
+   `TELEGRAM_WEBHOOK_SECRET` (32+ of `A-Z a-z 0-9 _ -`), `TELEGRAM_LINK_SECRET` (32+
+   characters), `CLINIC_DISPLAY_NAME`, `CLINIC_ADDRESS` and `CLINIC_PHONE`. Optional:
+   `TELEGRAM_REMINDER_CRON` (default `0 0 17 * * *`, Asia/Phnom_Penh). Missing values fail startup.
+3. Deploy, then register the webhook once:
+   `https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<backend-host>/api/v1/telegram/webhook&secret_token=<TELEGRAM_WEBHOOK_SECRET>&allowed_updates=["message"]`.
+   While a webhook is set, `getUpdates` no longer works.
 
 ## Repository layout
 

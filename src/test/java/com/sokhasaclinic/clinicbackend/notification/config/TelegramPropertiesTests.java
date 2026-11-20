@@ -36,5 +36,42 @@ class TelegramPropertiesTests {
         TelegramProperties properties = new TelegramProperties();
         properties.setChatId("not-a-number");
         assertTrue(properties.isConfigurationValid());
+        assertTrue(properties.isPatientConfigurationValid());
+        assertFalse(properties.patientUpdatesEnabled());
+    }
+
+    private static TelegramProperties patientReady() {
+        TelegramProperties properties = enabled("-5565238118");
+        TelegramProperties.Patient patient = properties.getPatient();
+        patient.setEnabled(true);
+        patient.setBotUsername("Sokhasaclinic_bot");
+        patient.setWebhookSecret("a".repeat(32));
+        patient.setLinkSecret("b".repeat(32));
+        patient.setClinicName("C2G+ Sokhasa");
+        patient.setClinicAddress("Sen Sok, Phnom Penh");
+        patient.setClinicPhone("095 666 990");
+        return properties;
+    }
+
+    @Test
+    void patientUpdatesNeedEverySetting() {
+        assertTrue(patientReady().isPatientConfigurationValid());
+        assertTrue(patientReady().patientUpdatesEnabled());
+
+        TelegramProperties staffOff = patientReady();
+        staffOff.setEnabled(false);
+        assertFalse(staffOff.isPatientConfigurationValid(), "patient updates need staff Telegram on");
+
+        TelegramProperties shortSecret = patientReady();
+        shortSecret.getPatient().setWebhookSecret("short");
+        assertFalse(shortSecret.isPatientConfigurationValid());
+
+        TelegramProperties badUsername = patientReady();
+        badUsername.getPatient().setBotUsername("@Sokhasaclinic_bot");
+        assertFalse(badUsername.isPatientConfigurationValid());
+
+        TelegramProperties noPhone = patientReady();
+        noPhone.getPatient().setClinicPhone(" ");
+        assertFalse(noPhone.isPatientConfigurationValid());
     }
 }

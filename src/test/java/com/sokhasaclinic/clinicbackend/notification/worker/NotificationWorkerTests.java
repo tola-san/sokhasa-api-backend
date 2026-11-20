@@ -23,6 +23,33 @@ class NotificationWorkerTests {
     }
 
     @Test
+    void patientMessageAfterStopIsCancelledNotSent() {
+        properties.setEnabled(true);
+        UUID subscription = UUID.randomUUID();
+        Job job = new Job(UUID.randomUUID(), "8878232559", "<blockquote>confirmed</blockquote>", 1,
+                UUID.randomUUID(), subscription);
+        when(jobs.claim(5)).thenReturn(Optional.of(job), Optional.empty());
+        when(jobs.subscriptionActive(subscription)).thenReturn(false);
+        worker.deliver();
+        verify(jobs).cancelled(job);
+        verify(client, never()).send(any(), any());
+        verify(jobs, never()).sent(any());
+    }
+
+    @Test
+    void patientMessageWithActiveSubscriptionIsSent() {
+        properties.setEnabled(true);
+        UUID subscription = UUID.randomUUID();
+        Job job = new Job(UUID.randomUUID(), "8878232559", "<blockquote>confirmed</blockquote>", 1,
+                UUID.randomUUID(), subscription);
+        when(jobs.claim(5)).thenReturn(Optional.of(job), Optional.empty());
+        when(jobs.subscriptionActive(subscription)).thenReturn(true);
+        worker.deliver();
+        verify(client).send(job.chatId(), job.message());
+        verify(jobs).sent(job);
+    }
+
+    @Test
     void rateLimitedDeliveryRetriesAfterTelegramDelay() {
         properties.setEnabled(true);
         Job job = new Job(UUID.randomUUID(), "-123", "summary", 1, UUID.randomUUID());

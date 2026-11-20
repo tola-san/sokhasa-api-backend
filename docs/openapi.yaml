@@ -1185,7 +1185,7 @@ paths:
       tags:
         - Telegram
       operationId: receiveTelegramUpdate
-      summary: Telegram bot updates for patient opt-in (proposed, PT-03)
+      summary: Telegram bot updates for patient opt-in (PT-03)
       description: |
         Called only by Telegram, registered with setWebhook. Handles /start <code>, /start and /stop
         in private chats; every other authenticated update is acknowledged with 200 and ignored.
@@ -3269,7 +3269,7 @@ components:
           type: [string, 'null']
           format: uri
           description: |
-            Proposed (PT-02). Opens the clinic bot to opt in to Telegram updates for this booking.
+            PT-02. Opens the clinic bot to opt in to Telegram updates for this booking.
             Single use, expires 24 hours after booking; the same URL on an idempotent replay.
             Null when patient updates are disabled (PT-12).
           example: https://t.me/Sokhasaclinic_bot?start=Qm9va2luZ0xpbmtDb2RlRXhhbXBsZTEyMzQ1Njc4OTA
@@ -3352,7 +3352,7 @@ components:
               description: The patient's preferred doctor (PD-03, PD-07); never overwritten; null when none.
             patientTelegramConnected:
               type: boolean
-              description: Proposed (PT-10). True while the patient has an active Telegram subscription for this booking.
+              description: PT-10. True while the patient has an active Telegram subscription for this booking.
             doctorId:
               type: [string, 'null']
               format: uuid

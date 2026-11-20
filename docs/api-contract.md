@@ -756,7 +756,7 @@ contract that lets the patient booking form and the reception dashboard use them
 | AP-11 | Period availability before submit (open question 1) | Yes: `GET /public/booking-periods`, so the form can disable full periods instead of failing on submit with `409 PERIOD_FULL`. |
 | AP-12 | Rate limit | 5 booking requests per 10 minutes per client IP; more returns `429 RATE_LIMITED`. |
 | AP-13 | Not-found codes | Specific codes, as elsewhere in this contract: `APPOINTMENT_NOT_FOUND`, `SERVICE_NOT_FOUND`, `DOCTOR_NOT_FOUND`. |
-| AP-14 | Out of scope for the MVP | Patient cancellation (BD-07), no-show, rescheduling, undoing a step, reception-entered bookings and patient notifications. Each needs its own decision; cancellation and no-show would add statuses. *(Patient notifications: proposed by the patient Telegram updates revision, PT-01 to PT-12, November 20, 2026.)* |
+| AP-14 | Out of scope for the MVP | Patient cancellation (BD-07), no-show, rescheduling, undoing a step, reception-entered bookings and patient notifications. Each needs its own decision; cancellation and no-show would add statuses. *(Patient notifications: approved in the patient Telegram updates revision, PT-01 to PT-12, November 20, 2026.)* |
 | AP-15 | Date range on the list | `from` and `to` (inclusive) on `GET /admin/appointments`, so the reception calendar loads a month or week in one request and the list's "Date range" filter works. |
 | AP-16 | Doctors for confirm | `GET /admin/doctors` returns the active doctors (`id`, `fullName`), so reception can pick one in the confirm dialog. Read-only; the doctor editor stays after the MVP. |
 
@@ -1779,8 +1779,10 @@ No new codes.
 
 ## Patient Telegram updates - revision, November 20, 2026
 
-> **Status:** Proposed. Awaits Team Lead approval through PR review in both repositories.
-> **Changes AP-14** for patient notifications only: a patient may opt in, per booking, to
+> **Status:** Approved by the Team Lead on November 20, 2026, including PT-01 to PT-12. Clinic
+> name, address and phone come from configuration; the reminder time defaults to 17:00 and is
+> configurable; Khmer and Chinese wording is drafted for clinic review before patient updates
+> are enabled. **Changes AP-14** for patient notifications only: a patient may opt in, per booking, to
 > Telegram messages about that booking. Cancellation, no-show, rescheduling and other AP-14
 > items stay out of scope. Roles, appointment and visit transitions, and receptionist approval
 > are unchanged. Staff still change statuses only in the authenticated dashboard; Telegram never
