@@ -39,6 +39,19 @@ class TelegramClientTests {
     }
 
     @Test
+    void sendsBlockQuoteSummariesAsHtml() {
+        String html = "<blockquote><b>New booking request</b></blockquote>";
+        server.expect(requestTo("https://api.telegram.org/bot123:test-token/sendMessage"))
+                .andExpect(content().json("""
+                        {"chat_id":"8878232559", "text":"<blockquote><b>New booking request</b></blockquote>",
+                         "parse_mode":"HTML"}
+                        """, org.springframework.test.json.JsonCompareMode.STRICT))
+                .andRespond(withSuccess("{\"ok\":true,\"result\":{\"message_id\":13}}", MediaType.APPLICATION_JSON));
+        client.send("8878232559", html);
+        server.verify();
+    }
+
+    @Test
     void rateLimitPreservesRetryAfterWithoutLeakingResponse() {
         server.expect(anything()).andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS)
                 .contentType(MediaType.APPLICATION_JSON).body("""

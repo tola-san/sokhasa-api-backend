@@ -8,6 +8,7 @@ import java.util.Map;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.sokhasaclinic.clinicbackend.notification.service.AppointmentMessageFormatter;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
@@ -51,9 +52,13 @@ public class TelegramClient {
     }
 
     public void send(String chatId, String message) {
+        // New summaries are escaped HTML; jobs queued before that change are plain text and stay so.
+        Map<String, String> body = message.startsWith(AppointmentMessageFormatter.HTML_PREFIX)
+                ? Map.of("chat_id", chatId, "text", message, "parse_mode", "HTML")
+                : Map.of("chat_id", chatId, "text", message);
         try {
             Response response = client.post().uri("/bot" + properties.getBotToken() + "/sendMessage")
-                    .body(Map.of("chat_id", chatId, "text", message))
+                    .body(body)
                     .retrieve().body(Response.class);
             if (response == null) throw new DeliveryException("EMPTY_RESPONSE", true, 0);
             if (!response.ok()) throw failure(response.errorCode(), response.parameters());

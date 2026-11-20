@@ -73,9 +73,11 @@ Run `./mvnw verify` or `.\mvnw.cmd verify` on Windows. The Spring Boot integrati
 Optional backend-only integration. Each new
 booking queues one `APPOINTMENT_CREATED` summary for the configured private reception
 group. It includes the reference, patient name and phone, English service name
-(slug fallback), requested date/time or period, `Pending review`, and submission
-time in `Asia/Phnom_Penh`. Messages contain no buttons, links, patient email or
-medical notes. Receptionists review bookings separately in the authenticated dashboard.
+(slug fallback), requested date/time or period, the preferred doctor when the patient
+chose one, `Pending review`, and submission time in `Asia/Phnom_Penh`. The whole summary
+is one Telegram block quote (HTML parse mode) with bold labels, blank lines between
+groups, and the reference and phone in monospace for tap-to-copy. Every value is
+HTML-escaped. Messages contain no buttons, links, patient email or medical notes. Receptionists review bookings separately in the authenticated dashboard.
 No public endpoints, patient Telegram subscriptions or appointment statuses are added.
 
 1. Create a clinic bot through Telegram's BotFather and add it to a private group
