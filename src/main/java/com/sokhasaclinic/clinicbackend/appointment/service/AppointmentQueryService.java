@@ -121,7 +121,8 @@ public class AppointmentQueryService {
                 .map(Appointment::getPreferredDoctorId).toList());
         List<AppointmentListItem> items = result.getContent().stream()
                 .map(a -> listItem(a, names.getOrDefault(a.getService().getId(), ""),
-                        preferred.get(a.getPreferredDoctorId())))
+                        // Map.of() rejects a null key, and most requests have no preferred doctor.
+                        a.getPreferredDoctorId() == null ? null : preferred.get(a.getPreferredDoctorId())))
                 .toList();
         return new PageResponse<>(items,
                 new PageInfo(result.getNumber(), result.getSize(), result.getTotalElements(), result.getTotalPages()));
