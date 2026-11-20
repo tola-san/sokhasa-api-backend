@@ -1945,8 +1945,9 @@ Enabling patient updates with any of these missing fails startup, like the staff
 
 ## Dashboard statistics - revision, November 20, 2026
 
-> **Status:** Pending Team Lead approval through PR review, including DS-01 to DS-12. Do not
-> implement until approved. Adds two read-only routes for the admin dashboard. Builds on the
+> **Status:** Approved by the Team Lead on November 20, 2026, including DS-01 to DS-12 as written
+> and the answers to the three open questions below. Adds two read-only routes for the admin
+> dashboard. Builds on the
 > dashboard summary (AP route 11), the status history (AP-09) and doctor booking windows
 > (Doctor and schedule management revision). Roles, appointment and visit transitions, and
 > receptionist approval are unchanged. No doctor login is introduced.
@@ -2080,10 +2081,9 @@ No new codes. Problem-details body as for the banner.
 | Inactive doctor with windows today | Not listed |
 | No doctors working today | `doctors: []` |
 
-### Open questions for the Team Lead
+### Resolved questions
 
-1. Should `confirmed` count confirmations made in the period (DS-04), or the requests from that
-   period that were later confirmed? The first shows reception's workload; the second shows the
-   approval rate per period.
-2. Should the chart also show `rejected`? It is one more count from the same history query.
-3. Is a rolling 7-day `WEEK` right, or should it be the calendar week (Monday to Sunday)?
+1. `confirmed` counts confirmations made in the period, as DS-04 says, so the chart shows
+   reception's workload. Requests made in one period and confirmed in the next count in the next.
+2. The chart has no `rejected` count. Buckets carry `requested`, `confirmed` and `completed` only.
+3. `WEEK` is the rolling last 7 clinic days including today (DS-01), not the calendar week.

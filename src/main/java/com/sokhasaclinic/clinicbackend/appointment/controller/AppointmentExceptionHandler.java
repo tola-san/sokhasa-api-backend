@@ -25,7 +25,8 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
  * {@code errors}).
  */
 @RestControllerAdvice(basePackages = {"com.sokhasaclinic.clinicbackend.appointment.controller",
-        "com.sokhasaclinic.clinicbackend.doctor.controller"})
+        "com.sokhasaclinic.clinicbackend.doctor.controller",
+        "com.sokhasaclinic.clinicbackend.dashboard.controller"})
 public class AppointmentExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(AppointmentExceptionHandler.class);

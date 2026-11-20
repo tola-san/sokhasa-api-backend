@@ -1505,8 +1505,8 @@ paths:
       operationId: getDashboardStats
       summary: Appointment activity per day, month or year and top services
       description: >-
-        DS-01 to DS-07, DS-11, November 20, 2026. Pending Team Lead approval; do not implement until
-        approved. Buckets follow clinic time (Asia/Phnom_Penh). Totals only. Cache-Control no-store.
+        DS-01 to DS-07, DS-11, approved November 20, 2026. Buckets follow clinic time
+        (Asia/Phnom_Penh). Totals only. Cache-Control no-store.
       parameters:
         - name: range
           in: query
@@ -1542,8 +1542,8 @@ paths:
       operationId: getDashboardDoctorsToday
       summary: Doctors working today with merged windows and patient counts
       description: >-
-        DS-08 to DS-11, November 20, 2026. Pending Team Lead approval; do not implement until
-        approved. Active doctors with a booking window or an appointment today, in display order.
+        DS-08 to DS-11, approved November 20, 2026. Active doctors with a booking window or an
+        appointment today, in display order.
         Cache-Control no-store.
       responses:
         '200':
@@ -3445,7 +3445,7 @@ components:
 
     DashboardStats:
       type: object
-      description: DS revision, pending Team Lead approval.
+      description: DS revision, approved November 20, 2026.
       required: [range, from, to, series, totalRequested, topServices]
       properties:
         range:
@@ -3527,7 +3527,7 @@ components:
 
     DashboardDoctorsToday:
       type: object
-      description: DS revision, pending Team Lead approval.
+      description: DS revision, approved November 20, 2026.
       required: [date, doctors]
       properties:
         date:

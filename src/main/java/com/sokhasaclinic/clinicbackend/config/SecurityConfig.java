@@ -52,6 +52,8 @@ public class SecurityConfig {
             "/api/v1/admin/appointments",
             "/api/v1/admin/appointments/**",
             "/api/v1/admin/dashboard/summary",
+            "/api/v1/admin/dashboard/stats",
+            "/api/v1/admin/dashboard/doctors-today",
             "/api/v1/admin/doctors",
     };
 

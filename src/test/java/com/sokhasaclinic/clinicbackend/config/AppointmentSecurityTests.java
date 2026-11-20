@@ -59,6 +59,8 @@ class AppointmentSecurityTests {
         mvc.perform(get("/api/v1/admin/appointments")).andExpect(status().isUnauthorized());
         mvc.perform(patch(APPOINTMENT + "/confirm")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/admin/dashboard/summary")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/dashboard/stats")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/v1/admin/dashboard/doctors-today")).andExpect(status().isUnauthorized());
         mvc.perform(get("/api/v1/admin/doctors")).andExpect(status().isUnauthorized());
     }
 
@@ -70,6 +72,9 @@ class AppointmentSecurityTests {
             mvc.perform(get(APPOINTMENT).header("Authorization", bearer)).andExpect(status().isNotFound());
             mvc.perform(patch(APPOINTMENT + "/arrive").header("Authorization", bearer)).andExpect(status().isNotFound());
             mvc.perform(get("/api/v1/admin/dashboard/summary").header("Authorization", bearer)).andExpect(status().isNotFound());
+            mvc.perform(get("/api/v1/admin/dashboard/stats").header("Authorization", bearer)).andExpect(status().isNotFound());
+            mvc.perform(get("/api/v1/admin/dashboard/doctors-today").header("Authorization", bearer))
+                    .andExpect(status().isNotFound());
             mvc.perform(get("/api/v1/admin/doctors").header("Authorization", bearer)).andExpect(status().isNotFound());
         }
     }
