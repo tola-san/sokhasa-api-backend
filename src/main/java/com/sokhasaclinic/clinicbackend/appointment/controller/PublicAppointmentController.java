@@ -92,7 +92,8 @@ public class PublicAppointmentController {
                 .body(new ApiResponse<>(new BookingConfirmation(
                         booked.id(), booked.reference(), AppointmentStatus.PENDING, booked.preferredDate(),
                         booked.preferredPeriod(),
-                        booked.preferredStartTime() == null ? null : booked.preferredStartTime().toString())));
+                        booked.preferredStartTime() == null ? null : booked.preferredStartTime().toString(),
+                        queries.telegramLinkUrl(booked.id()))));
     }
 
     private static UUID parseKey(String header) {

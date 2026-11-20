@@ -23,6 +23,7 @@ import com.sokhasaclinic.clinicbackend.common.time.ClinicTime;
 import com.sokhasaclinic.clinicbackend.doctor.model.Doctor;
 import com.sokhasaclinic.clinicbackend.doctor.model.DoctorStatus;
 import com.sokhasaclinic.clinicbackend.doctor.repository.DoctorRepository;
+import com.sokhasaclinic.clinicbackend.notification.service.PatientTelegramService;
 import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.Predicate;
 import java.time.Clock;
@@ -76,6 +77,7 @@ public class AppointmentQueryService {
     private final ClinicServiceRepository services;
     private final ClinicServiceTranslationRepository serviceText;
     private final DoctorRepository doctors;
+    private final PatientTelegramService patientTelegram;
     private final Clock clock;
 
     @Autowired
@@ -85,8 +87,9 @@ public class AppointmentQueryService {
             BookingSettings settings,
             ClinicServiceRepository services,
             ClinicServiceTranslationRepository serviceText,
-            DoctorRepository doctors) {
-        this(appointments, periods, settings, services, serviceText, doctors, Clock.systemUTC());
+            DoctorRepository doctors,
+            PatientTelegramService patientTelegram) {
+        this(appointments, periods, settings, services, serviceText, doctors, patientTelegram, Clock.systemUTC());
     }
 
     AppointmentQueryService(
@@ -96,6 +99,7 @@ public class AppointmentQueryService {
             ClinicServiceRepository services,
             ClinicServiceTranslationRepository serviceText,
             DoctorRepository doctors,
+            PatientTelegramService patientTelegram,
             Clock clock) {
         this.appointments = appointments;
         this.periods = periods;
@@ -103,6 +107,7 @@ public class AppointmentQueryService {
         this.services = services;
         this.serviceText = serviceText;
         this.doctors = doctors;
+        this.patientTelegram = patientTelegram;
         this.clock = clock;
     }
 
@@ -142,8 +147,13 @@ public class AppointmentQueryService {
                 a.getDurationMinutes(), a.getBufferMinutes(),
                 a.getDoctor() == null ? null : a.getDoctor().getId(),
                 clinicTime(a.getEndAt()), clinicTime(a.getUpdatedAt()), requestedTime(a),
-                a.getPreferredDoctorId(), preferredName);
+                a.getPreferredDoctorId(), preferredName, patientTelegram.connected(a.getId()));
         return new VersionedDetail(detail, a.getVersion());
+    }
+
+    /** PT-02: the booking's "Open Telegram" opt-in link, or null when patient updates are disabled. */
+    public String telegramLinkUrl(UUID appointmentId) {
+        return patientTelegram.linkUrl(appointmentId);
     }
 
     /** Pending requests, and today's confirmed and later appointments by status. */

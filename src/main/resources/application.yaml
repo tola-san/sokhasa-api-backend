@@ -26,6 +26,15 @@ clinic:
     bot-token: ${TELEGRAM_BOT_TOKEN:}
     chat-id: "${TELEGRAM_CHAT_ID:}"
     retry-max-attempts: ${TELEGRAM_RETRY_MAX_ATTEMPTS:5}
+    patient:
+      enabled: ${TELEGRAM_PATIENT_UPDATES_ENABLED:false}
+      bot-username: ${TELEGRAM_BOT_USERNAME:}
+      webhook-secret: ${TELEGRAM_WEBHOOK_SECRET:}
+      link-secret: ${TELEGRAM_LINK_SECRET:}
+      reminder-cron: "${TELEGRAM_REMINDER_CRON:0 0 17 * * *}"
+      clinic-name: ${CLINIC_DISPLAY_NAME:}
+      clinic-address: ${CLINIC_ADDRESS:}
+      clinic-phone: ${CLINIC_PHONE:}
 
 management:
   endpoints:

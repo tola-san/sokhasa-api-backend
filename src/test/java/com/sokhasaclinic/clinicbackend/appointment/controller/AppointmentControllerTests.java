@@ -294,6 +294,6 @@ class AppointmentControllerTests {
         OffsetDateTime created = OffsetDateTime.of(2026, 11, 18, 10, 5, 0, 0, ZoneOffset.ofHours(7));
         return new AppointmentDetail(ID, "SK-20261120-0007", AppointmentStatus.PENDING, "Sok Dara", "+85512345678",
                 "Chronic Disease Management", LocalDate.parse("2026-11-20"), "MORNING", null, null, created,
-                SERVICE, null, "km", null, 30, 10, null, null, created, null, null, null);
+                SERVICE, null, "km", null, 30, 10, null, null, created, null, null, null, false);
     }
 }

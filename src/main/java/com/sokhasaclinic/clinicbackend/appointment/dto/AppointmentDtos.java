@@ -54,7 +54,9 @@ public final class AppointmentDtos {
             AppointmentStatus status,
             LocalDate preferredDate,
             String preferredPeriod,
-            String preferredStartTime) {
+            String preferredStartTime,
+            /** PT-02: opt-in link for Telegram updates; null when patient updates are disabled. */
+            String telegramLinkUrl) {
     }
 
     public record BookingSlot(OffsetDateTime startAt, OffsetDateTime endAt) { }
@@ -108,7 +110,9 @@ public final class AppointmentDtos {
             String preferredStartTime,
             /** PD-03, PD-07: the patient's preferred doctor; never overwritten; null when none. */
             UUID preferredDoctorId,
-            String preferredDoctorName) {
+            String preferredDoctorName,
+            /** PT-10: true while the patient receives Telegram updates for this booking. */
+            boolean patientTelegramConnected) {
     }
 
     public record PageInfo(int number, int size, long totalElements, int totalPages) {

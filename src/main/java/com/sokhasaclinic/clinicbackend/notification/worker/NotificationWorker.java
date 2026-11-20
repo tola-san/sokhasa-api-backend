@@ -29,6 +29,11 @@ public class NotificationWorker {
             var claimed = jobs.claim(properties.getRetryMaxAttempts());
             if (claimed.isEmpty()) return;
             var job = claimed.get();
+            // PT-07, PT-09: a patient who sent /stop gets nothing more, even on retry.
+            if (job.subscriptionId() != null && !jobs.subscriptionActive(job.subscriptionId())) {
+                if (jobs.cancelled(job)) log.info("Telegram job {} cancelled (subscription revoked)", job.id());
+                continue;
+            }
             try {
                 // Claim transaction has committed; no network request inside a database transaction.
                 telegram.send(job.chatId(), job.message());
