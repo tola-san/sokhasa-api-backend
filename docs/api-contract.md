@@ -756,7 +756,7 @@ contract that lets the patient booking form and the reception dashboard use them
 | AP-11 | Period availability before submit (open question 1) | Yes: `GET /public/booking-periods`, so the form can disable full periods instead of failing on submit with `409 PERIOD_FULL`. |
 | AP-12 | Rate limit | 5 booking requests per 10 minutes per client IP; more returns `429 RATE_LIMITED`. |
 | AP-13 | Not-found codes | Specific codes, as elsewhere in this contract: `APPOINTMENT_NOT_FOUND`, `SERVICE_NOT_FOUND`, `DOCTOR_NOT_FOUND`. |
-| AP-14 | Out of scope for the MVP | Patient cancellation (BD-07), no-show, rescheduling, undoing a step, reception-entered bookings and patient notifications. Each needs its own decision; cancellation and no-show would add statuses. |
+| AP-14 | Out of scope for the MVP | Patient cancellation (BD-07), no-show, rescheduling, undoing a step, reception-entered bookings and patient notifications. Each needs its own decision; cancellation and no-show would add statuses. *(Patient notifications: proposed by the patient Telegram updates revision, PT-01 to PT-12, November 20, 2026.)* |
 | AP-15 | Date range on the list | `from` and `to` (inclusive) on `GET /admin/appointments`, so the reception calendar loads a month or week in one request and the list's "Date range" filter works. |
 | AP-16 | Doctors for confirm | `GET /admin/doctors` returns the active doctors (`id`, `fullName`), so reception can pick one in the confirm dialog. Read-only; the doctor editor stays after the MVP. |
 
@@ -1775,3 +1775,167 @@ No new codes.
    revision keeps it out of the API response (PD-08); the form can show what was selected.
 2. Should reception see a hint when the preferred doctor has an overlap at the requested time?
    This revision adds none; confirm still returns `409 DOCTOR_UNAVAILABLE` on an actual overlap.
+
+
+## Patient Telegram updates - revision, November 20, 2026
+
+> **Status:** Proposed. Awaits Team Lead approval through PR review in both repositories.
+> **Changes AP-14** for patient notifications only: a patient may opt in, per booking, to
+> Telegram messages about that booking. Cancellation, no-show, rescheduling and other AP-14
+> items stay out of scope. Roles, appointment and visit transitions, and receptionist approval
+> are unchanged. Staff still change statuses only in the authenticated dashboard; Telegram never
+> changes an appointment. Builds on the staff notification outbox and the `telegram_subscription`
+> storage foundation (V12, V13).
+
+### Why
+
+Patients wait for reception to confirm a request and today hear back only by phone. An opt-in
+Telegram message when reception confirms or rejects, and a reminder the day before, tells them
+without a call. Patients need no account and never type a chat ID or phone number.
+
+### Patient flow
+
+1. The patient books. The confirmation screen shows **Get updates on Telegram** with an
+   **Open Telegram** button (no QR code). The button opens
+   `https://t.me/<bot>?start=<link code>`.
+2. Telegram opens the clinic bot and the patient taps **START**. Telegram sends the backend
+   `/start <link code>` from the patient's private chat.
+3. The backend links that private chat to the booking and replies **You're connected**.
+4. When reception confirms or rejects the request in the dashboard, or the day before a confirmed
+   visit, the bot sends the patient a message. `/stop` turns updates off.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| PT-01 | Opt-in only | Nothing is sent to a patient unless they tapped START with a valid link code for that booking. A chat ID or phone number is never accepted as proof of ownership. |
+| PT-02 | Link code | `POST /public/appointments` returns `telegramLinkUrl`, or `null` when patient updates are disabled. The code is 43 URL-safe characters derived as HMAC-SHA256(`TELEGRAM_LINK_SECRET`, appointment id), so an idempotent replay (AP-03) returns the same URL. Only its SHA-256 hash is stored. Single use; expires 24 hours after the booking was created. |
+| PT-03 | Webhook | `POST /api/v1/telegram/webhook` receives Telegram updates. It requires header `X-Telegram-Bot-Api-Secret-Token` equal to `TELEGRAM_WEBHOOK_SECRET`; otherwise `401`. It returns `200` for every authenticated update, including ones it ignores, so Telegram does not retry them. It is registered once with Telegram's `setWebhook` (deployment step). |
+| PT-04 | Linking | `/start <code>` in a **private** chat links that chat to the booking when the code is valid, unused and unexpired and the booking is `PENDING` or `CONFIRMED`. The code is then marked used and a `telegram_subscription` row is saved with the consent time. Group chats are ignored. A booking has one recipient: a second chat gets "already connected"; the same chat again gets "You're connected" (idempotent). Invalid or expired codes get a short help reply. |
+| PT-05 | Messages | `LINKED` (You're connected), `CONFIRMED`, `REJECTED` and `REMINDER`. `ARRIVED`, `IN_PROGRESS` and `COMPLETED` send nothing. Content follows the samples below, in one Telegram block quote, HTML-escaped. Never included: notes, email, the staff rejection reason. |
+| PT-06 | Language | The booking's `language` (`km`, `en`, `zh`; AP-05). Wording is reviewed by the clinic before release. |
+| PT-07 | Delivery | Patient messages use the existing outbox (`notification_job`) and its retries, queued in the same transaction as the status change. A failed or slow Telegram never blocks or rolls back reception's action. Each job is sent only if the subscription is still active when it is sent, including on retry. |
+| PT-08 | Reminder | Once, at 17:00 Asia/Phnom_Penh on the day before, for `CONFIRMED` appointments starting the next clinic day with an active subscription. Not sent if confirmed after 17:00 for the next day. At most one reminder per appointment. |
+| PT-09 | `/stop` | Revokes every active subscription of that chat (V13 keeps consent and revocation times). Queued jobs for those bookings are not sent. The bot replies once to confirm. |
+| PT-10 | Reception view | Admin detail adds `patientTelegramConnected` (boolean). Reception does nothing extra; messages go automatically on Confirm or Reject. |
+| PT-11 | One bot | The staff bot also serves patients. Staff summaries still go only to `TELEGRAM_CHAT_ID`. |
+| PT-12 | Off switch | `TELEGRAM_PATIENT_UPDATES_ENABLED` (default `false`). When off, `telegramLinkUrl` is `null`, the webhook returns `404`, and no patient jobs are queued. Staff summaries are unaffected. |
+
+### Routes
+
+| Method | Route | Access | Change |
+| --- | --- | --- | --- |
+| POST | /api/v1/public/appointments | Public | Response adds `telegramLinkUrl` |
+| POST | /api/v1/telegram/webhook | Telegram, secret header | New |
+| GET | /api/v1/admin/appointments/{id} | ADMIN, RECEPTION | Adds `patientTelegramConnected` |
+
+### `POST /api/v1/public/appointments` response
+
+```json
+{
+  "data": {
+    "id": "b2d4…",
+    "reference": "SK-20261120-0008",
+    "status": "PENDING",
+    "preferredDate": "2026-11-20",
+    "preferredPeriod": "AFTERNOON",
+    "preferredStartTime": "16:00",
+    "telegramLinkUrl": "https://t.me/Sokhasaclinic_bot?start=Qm9va2luZ0xpbmtDb2RlRXhhbXBsZTEyMzQ1Njc4OTA"
+  }
+}
+```
+
+The website shows the Telegram card only when `telegramLinkUrl` is not `null`, and opens it in
+a new tab. It is shown once, on the confirmation screen; it is not emailed or stored by the
+website.
+
+### `POST /api/v1/telegram/webhook`
+
+Body: a Telegram `Update`. Handled: `message.text` of `/start <code>`, `/start` and `/stop` in
+chats whose `type` is `private`. Everything else is acknowledged with `200` and ignored. The
+reply to the patient is sent through the outbox, not in the webhook response.
+
+### Message samples (English)
+
+**LINKED**
+```
+You're connected
+We'll send updates for your booking here.
+Reference: SK-20261120-0008
+Service: High-Resolution Digital Ultrasound & Organ Imaging
+Requested: Fri, 20 Nov 2026, 16:00
+Status: Waiting for reception to confirm
+Send /stop any time to turn off updates.
+```
+
+**CONFIRMED**
+```
+Your appointment is confirmed
+Reference: SK-20261120-0008
+Service: High-Resolution Digital Ultrasound & Organ Imaging
+Date: Fri, 20 Nov 2026
+Time: 16:00 – 16:30
+Doctor: Dr. Sok
+Clinic: <clinic name and address>
+Phone: <clinic phone>
+Please arrive 10 minutes early.
+```
+
+**REJECTED**: "We couldn't confirm your request", the reference and requested time, and how to
+book again or call. **REMINDER**: "Your appointment is tomorrow", with date, time, service,
+doctor and reference. The clinic name, address and phone come from configuration.
+
+### Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| 401 | `UNAUTHORIZED` | Webhook secret header missing or wrong |
+| 404 | `NOT_FOUND` | Webhook called while patient updates are disabled |
+
+Invalid, used or expired link codes are not HTTP errors: the webhook returns `200` and the bot
+replies with help text.
+
+### Configuration
+
+| Variable | Purpose |
+| --- | --- |
+| `TELEGRAM_PATIENT_UPDATES_ENABLED` | PT-12 switch, default `false` |
+| `TELEGRAM_BOT_USERNAME` | Builds `telegramLinkUrl`, for example `Sokhasaclinic_bot` |
+| `TELEGRAM_WEBHOOK_SECRET` | PT-03 header value, 32+ random characters |
+| `TELEGRAM_LINK_SECRET` | PT-02 HMAC key, 32+ random characters |
+| `CLINIC_DISPLAY_NAME`, `CLINIC_ADDRESS`, `CLINIC_PHONE` | Shown in patient messages |
+
+Enabling patient updates with any of these missing fails startup, like the staff settings.
+
+### Migration
+
+- `appointment_telegram_link (appointment_id PK FK, code_hash UNIQUE, expires_at, used_at)`.
+- `notification_job` gains `recipient` (`STAFF` or `PATIENT`) and the patient event types;
+  existing rows become `STAFF`. Patient jobs reference their subscription so delivery can check
+  that it is still active.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Patient updates disabled | `telegramLinkUrl: null`; no Telegram card; webhook `404` |
+| Book, open the link, tap START in a private chat | Subscription saved; LINKED message within seconds |
+| Same link opened again from the same chat | "You're connected" again; one subscription |
+| Same link from a second Telegram account | "Already connected"; no second recipient |
+| Link used after 24 hours | Help reply; no subscription |
+| `/start <code>` sent in a group | Ignored |
+| Webhook without the secret header | `401`; nothing changes |
+| Reception confirms a linked booking | CONFIRMED message with doctor and time |
+| Reception rejects with reason "Doctor on leave" | REJECTED message without the reason |
+| Reception confirms a booking that never linked | No patient job |
+| Patient sends `/stop`, then reception confirms | No CONFIRMED message |
+| Telegram is down when reception confirms | Confirm returns `200`; message retried later |
+| Confirmed for tomorrow at 10:00 today | REMINDER at 17:00 today |
+| Confirmed at 18:00 for tomorrow | No reminder |
+| Booking language `km` | Khmer messages |
+
+### Open questions for the Team Lead
+
+1. Real clinic name, address and phone for the messages.
+2. Reminder time: 17:00 the day before, or another time?
+3. Khmer and Chinese wording: who reviews the translations before release?
