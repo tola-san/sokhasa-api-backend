@@ -24,6 +24,13 @@ public class NotificationJobRepository {
                 """, String.class, serviceId);
     }
 
+    /** The full name of the patient's preferred doctor (PD-07), or null when there is none. */
+    public String doctorName(UUID doctorId) {
+        if (doctorId == null) return null;
+        return jdbc.query("SELECT full_name FROM clinic.doctor WHERE id = ?",
+                rs -> rs.next() ? rs.getString(1) : null, doctorId);
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public void enqueue(UUID appointmentId, String chatId, String message, Instant createdAt) {
         jdbc.update("""

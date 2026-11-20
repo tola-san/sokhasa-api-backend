@@ -24,7 +24,8 @@ public class NotificationService {
     public void appointmentCreated(AppointmentSnapshot appointment) {
         if (!properties.isEnabled()) return;
         String name = jobs.serviceName(appointment.serviceId());
-        jobs.enqueue(appointment.id(), properties.getChatId(), formatter.created(appointment, name),
+        String preferredDoctor = jobs.doctorName(appointment.preferredDoctorId());
+        jobs.enqueue(appointment.id(), properties.getChatId(), formatter.created(appointment, name, preferredDoctor),
                 appointment.createdAt());
     }
 }

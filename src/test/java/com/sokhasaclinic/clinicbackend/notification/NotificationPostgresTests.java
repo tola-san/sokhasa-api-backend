@@ -79,12 +79,15 @@ class NotificationPostgresTests {
         assertEquals(1, count(first.id()));
         String message = jdbc.queryForObject("select message from clinic.notification_job where appointment_id = ?",
                 String.class, first.id());
-        assertTrue(message.contains("Phone: +85512345678"));
-        assertTrue(message.contains("Status: Pending review"));
+        assertTrue(message.startsWith("<blockquote>") && message.endsWith("</blockquote>"));
+        assertTrue(message.contains("<b>Phone:</b>  <code>+85512345678</code>"));
+        assertTrue(message.contains("<b>Status:</b>  Pending review"));
         assertTrue(message.contains("Asia/Phnom_Penh"));
         assertFalse(message.contains("PRIVATE MEDICAL NOTES"));
         assertFalse(message.contains("private@example.com"));
         assertFalse(message.contains("\nStatus: Confirmed"));
+        assertFalse(message.contains("<b>Status:</b> Confirmed"));
+        assertFalse(message.contains("Preferred doctor"));
         assertFalse(message.contains("http"));
     }
 
