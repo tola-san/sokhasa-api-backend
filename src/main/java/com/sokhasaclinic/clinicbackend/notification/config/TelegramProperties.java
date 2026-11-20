@@ -21,9 +21,15 @@ public class TelegramProperties {
     @Min(1) @Max(20)
     private int retryMaxAttempts = 5;
 
-    @AssertTrue(message = "Enabled Telegram requires a bot token and a numeric private staff group chat ID")
+    /**
+     * A numeric Telegram chat ID: negative for a group (the private reception group, recommended),
+     * or positive for one person's private chat with the bot (useful for testing). That person must
+     * have sent the bot /start first. Usernames such as {@code @name} are not accepted.
+     */
+    @AssertTrue(message = "Enabled Telegram requires a bot token and a numeric chat ID "
+            + "(negative for the staff group, positive for a private chat with the bot)")
     public boolean isConfigurationValid() {
         return !enabled || (botToken != null && botToken.matches("[0-9]+:[A-Za-z0-9_-]+")
-                && chatId != null && chatId.matches("-[0-9]{1,20}"));
+                && chatId != null && chatId.matches("-?[1-9][0-9]{0,19}"));
     }
 }

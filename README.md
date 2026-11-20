@@ -85,6 +85,11 @@ No public endpoints, patient Telegram subscriptions or appointment statuses are 
 3. Set `TELEGRAM_ENABLED=true`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID` in the
    backend environment (or `.env` for the local profile/Compose). The group ID is
    negative. Invalid enabled configuration fails startup. The default is disabled.
+
+   For testing, `TELEGRAM_CHAT_ID` may instead be a positive private chat ID: one person's
+   chat with the bot, after they send it `/start` (find the ID the same way, in `getUpdates`).
+   Messages contain patient names and phone numbers, so use the staff group for real patients;
+   access to a group can be managed when staff change, while a personal chat cannot.
 4. Restart the backend to apply Flyway V12 and load configuration. Create a test
    booking using the existing booking API. Configure test credentials only when
    deliberately testing real Telegram delivery.
