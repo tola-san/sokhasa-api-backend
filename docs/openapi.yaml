@@ -1140,6 +1140,8 @@ paths:
         All requests still start as PENDING and require reception approval.
         Send exactly one of serviceId or packageId (PK-07). Package requests use preferredPeriod
         only; the appointment copies the package's duration and buffer (PK-03).
+        Optional preferredDoctorSlug (PD-01 to PD-05, November 20, 2026) names a public doctor
+        linked to the service as a non-binding preference; reception still assigns the doctor.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -1166,7 +1168,7 @@ paths:
         '400':
           $ref: '#/components/responses/AppointmentValidationError'
         '404':
-          description: Unknown or inactive service (SERVICE_NOT_FOUND) or package (PACKAGE_NOT_FOUND)
+          description: Unknown or inactive service (SERVICE_NOT_FOUND) or package (PACKAGE_NOT_FOUND), or a preferredDoctorSlug that is unknown or not public (DOCTOR_NOT_FOUND, PD-02)
         '409':
           description: PERIOD_FULL, SLOT_UNAVAILABLE or IDEMPOTENCY_CONFLICT
           content:
@@ -3140,7 +3142,8 @@ components:
       required: [preferredDate, language, patient]
       description: |
         Exactly one of serviceId or packageId (PK-07), and exactly one of preferredPeriod or
-        preferredStartTime. Package requests must use preferredPeriod.
+        preferredStartTime. Package requests must use preferredPeriod. preferredDoctorSlug is
+        allowed with serviceId only (PD-02).
       allOf:
         - oneOf:
             - required: [serviceId]
@@ -3178,6 +3181,16 @@ components:
           pattern: '^(?:[01][0-9]|2[0-3]):(?:00|30)$'
           description: Exact requested start, HH:mm in Asia/Phnom_Penh. Omit preferredPeriod.
           example: '14:30'
+        preferredDoctorSlug:
+          type: [string, 'null']
+          maxLength: 80
+          pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$'
+          description: |
+            Optional, non-binding preferred doctor (PD-01). Must be a public doctor linked to
+            serviceId (PD-02): unknown or non-public returns 404 DOCTOR_NOT_FOUND; not linked, or
+            sent with packageId, returns 400 VALIDATION_ERROR. Reception may assign any active
+            doctor on confirm (PD-06). Absent or null means no preference.
+          example: dr-sok
         language:
           $ref: '#/components/schemas/LanguageCode'
         patient:
@@ -3257,6 +3270,9 @@ components:
           format: date
         preferredPeriod:
           type: string
+        preferredDoctorName:
+          type: [string, 'null']
+          description: Current fullName of the patient's preferred doctor (PD-07); null when none.
         doctorName:
           type: [string, 'null']
         startAt:
@@ -3291,6 +3307,10 @@ components:
               type: integer
             bufferMinutes:
               type: integer
+            preferredDoctorId:
+              type: [string, 'null']
+              format: uuid
+              description: The patient's preferred doctor (PD-03, PD-07); never overwritten; null when none.
             doctorId:
               type: [string, 'null']
               format: uuid
