@@ -1472,8 +1472,7 @@ paths:
       operationId: getPublicAbout
       summary: About page content in one language
       description: >-
-        AB-01 to AB-14, November 20, 2026. Pending Team Lead approval; do not implement until
-        approved. No fallback language. Cache-Control no-store, Content-Language set.
+        AB-01 to AB-14, approved November 20, 2026. No fallback language. Cache-Control no-store, Content-Language set.
       parameters:
         - name: lang
           in: query
@@ -1501,7 +1500,7 @@ paths:
         - BearerAuth: []
       operationId: getAdminAbout
       summary: About page content in every language, with its ETag
-      description: AB revision, pending Team Lead approval. ADMIN only.
+      description: AB revision, approved November 20, 2026. ADMIN only.
       responses:
         '200':
           description: The page and its version
@@ -1525,7 +1524,7 @@ paths:
       operationId: updateAdminAbout
       summary: Replace and publish the About page content
       description: >-
-        AB-03 to AB-13, pending Team Lead approval. Facilities without an id are created; facilities
+        AB-03 to AB-13, approved November 20, 2026. Facilities without an id are created; facilities
         left out are deleted with their images.
       parameters:
         - $ref: '#/components/parameters/AboutIfMatch'
@@ -1575,7 +1574,7 @@ paths:
         - BearerAuth: []
       operationId: putAboutFacilityImage
       summary: Upload or replace a facility photo
-      description: AB-12 (SI-01 to SI-07 rules), pending Team Lead approval. Changes the page version.
+      description: AB-12 (SI-01 to SI-07 rules), approved November 20, 2026. Changes the page version.
       parameters:
         - $ref: '#/components/parameters/AboutIfMatch'
       requestBody:
@@ -1584,11 +1583,28 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [image]
+              required: [image, altTexts]
               properties:
                 image:
                   type: string
                   format: binary
+                altTexts:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  items:
+                    type: object
+                    required: [languageCode, imageAltText]
+                    properties:
+                      languageCode:
+                        $ref: '#/components/schemas/LanguageCode'
+                      imageAltText:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+            encoding:
+              altTexts:
+                contentType: application/json
       responses:
         '200':
           $ref: '#/components/responses/AdminAboutSaved'
@@ -1608,7 +1624,7 @@ paths:
         - BearerAuth: []
       operationId: deleteAboutFacilityImage
       summary: Remove a facility photo and its alt text
-      description: AB-12, pending Team Lead approval. Changes the page version.
+      description: AB-12, approved November 20, 2026. Changes the page version.
       parameters:
         - $ref: '#/components/parameters/AboutIfMatch'
       responses:
@@ -3685,7 +3701,7 @@ components:
 
     AdminAboutWrite:
       type: object
-      description: AB revision, pending Team Lead approval.
+      description: AB revision, approved November 20, 2026.
       required: [translations, pillars, figures, founders, facilities]
       properties:
         translations:
@@ -3778,7 +3794,7 @@ components:
 
     PublicAbout:
       type: object
-      description: AB revision, pending Team Lead approval. Every field present; optional values null.
+      description: AB revision, approved November 20, 2026. Every field present; optional values null.
       required: [heroTitle, heroSubtitle, storyTitle, storyParagraphs, pillars, figures, founders, facilities]
       properties:
         heroTitle: { type: string }

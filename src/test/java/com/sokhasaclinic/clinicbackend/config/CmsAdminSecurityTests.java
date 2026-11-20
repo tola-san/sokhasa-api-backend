@@ -69,6 +69,19 @@ class CmsAdminSecurityTests {
     }
 
     @Test
+    void aboutPageAndFacilityImagesAreAdminOnly() throws Exception {
+        String about = "/api/v1/admin/about";
+        String image = about + "/facilities/ab100000-0000-4000-8000-000000000001/image";
+        mvc.perform(get(about)).andExpect(status().isUnauthorized());
+        mvc.perform(get(about).header("Authorization", "Bearer receptionist"))
+                .andExpect(status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put(about)
+                .header("Authorization", "Bearer receptionist")).andExpect(status().isForbidden());
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete(image)
+                .header("Authorization", "Bearer receptionist")).andExpect(status().isForbidden());
+    }
+
+    @Test
     void receptionistCannotViewOrEditServices() throws Exception {
         // Admin service routes are ADMIN only, including reads (decisions SA-01 and SA-09).
         String service = "/api/v1/admin/services/3f1c2a4e-8b7d-4c1a-9e2f-5d6b7a8c9d01";

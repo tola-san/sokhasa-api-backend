@@ -2091,8 +2091,8 @@ No new codes. Problem-details body as for the banner.
 
 ## About page content - revision, November 20, 2026
 
-> **Status:** Pending Team Lead approval through PR review, including AB-01 to AB-14. Do not
-> implement until approved. Makes the content of the public About page editable by the Clinic
+> **Status:** Approved by the Team Lead on November 20, 2026 (AB-01 to AB-14).
+> Makes the content of the public About page editable by the Clinic
 > Admin. Builds on the multilingual banner rules (I18N-01 to I18N-05), service images (SI) and
 > public doctor profiles (PC, Doctor profile details). Roles, appointment and visit transitions,
 > and receptionist approval are unchanged. No doctor login is introduced.
@@ -2121,7 +2121,7 @@ This revision stores the page content in the backend and lets the admin edit it 
 | AB-10 | Founder visibility | A founder must be an active doctor with a public profile when saved, or the save returns `404 DOCTOR_NOT_FOUND` with the index in `errors[].field` (`founders[1]`). A founder who later stops being public is left out of the public response; the admin response still lists them with `public: false`. |
 | AB-11 | Facilities | 0 to 8 items, in the order given. Each has a translated `title`, `description` and optional `badge`. An existing facility keeps its `id` in the `PUT`; an item without `id` is new; a facility left out of the `PUT` is deleted with its image. |
 | AB-12 | Facility images | Uploaded and removed per facility with `PUT` and `DELETE /admin/about/facilities/{id}/image`, following SI-01 to SI-07: JPEG, PNG or WebP up to 5 MiB, stored in R2 through `cms_media`, alt text required in every language while there is an image. A facility without an image is shown without a photo. |
-| AB-13 | Initial content | The migration seeds the current website text in all three languages, so the page looks the same on release except for facility photos and founders, which the admin adds (open questions 1 and 2). |
+| AB-13 | Initial content | The migration seeds the current website text in all three languages, so the page looks the same on release except for facility photos and founders, which the admin adds after release. |
 | AB-14 | Access and caching | Admin routes: ADMIN only, like the banner. Public route: no authentication, `Cache-Control: no-store` and `Content-Language`, like the public banner. |
 
 ### Field limits
@@ -2148,6 +2148,9 @@ Text is trimmed; a value that is empty after trimming counts as missing.
 | PUT | /api/v1/admin/about | ADMIN, `If-Match` required |
 | PUT | /api/v1/admin/about/facilities/{id}/image | ADMIN, `If-Match` required |
 | DELETE | /api/v1/admin/about/facilities/{id}/image | ADMIN, `If-Match` required |
+
+The image upload takes `image` and an `altTexts` JSON part with exactly three
+`{ "languageCode", "imageAltText" }` entries, one per language, as for service and doctor photos.
 
 The image routes take the page `ETag`, change the page `version` and return the admin body with
 the new `ETag`, so two admins cannot overwrite each other's changes.
@@ -2288,15 +2291,9 @@ No new codes. Problem-details body as for the banner.
 | Upload an image, then save without alt text in `zh` | `400 VALIDATION_ERROR` on `facilities[0].translations` |
 | RECEPTION calls an admin route | `403` |
 
-### Open questions for the Team Lead
+### Release decisions — approved November 20, 2026
 
-1. **Founders on release.** The migration cannot know which doctor records are the two founders.
-   Should the admin pick them after release (the section stays hidden until then), or should the
-   migration match them by slug?
-2. **Facility photos on release.** Today's photos are files in the website code, not uploads.
-   Should the admin upload them after release, or should the backend seed them into R2?
-3. **Khmer names.** The founder cards show each founder's name in Khmer script under the English
-   name. Doctor profiles have no such field (`fullName` is not translated). Drop it, or add a
-   translated display name to doctor profiles in a separate revision?
-4. **Facts that disagree.** The About page names a Sen Sok headquarters, while the Contact page
-   lists the Boeung Trabek and Boeung Snor branches. Which is correct for the seeded text?
+1. The admin selects founders after release. Until then, the founder section is hidden.
+2. The admin uploads facility photos after release. Until then, facilities have no photos.
+3. Founder cards omit the separate Khmer-script name. Names come from doctor profiles.
+4. Seed today's text unchanged, including Sen Sok. The admin can correct it in the editor.
