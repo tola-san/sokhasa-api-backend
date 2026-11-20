@@ -121,6 +121,24 @@ failure rolls back the booking transaction so it cannot silently lose the notifi
 Notification unit tests use a mock HTTP transport; PostgreSQL tests use the existing
 `CLINIC_TEST_DATABASE_*` variables and never send real Telegram messages.
 
+### Patient subscription storage foundation
+
+Flyway V13 adds `clinic.telegram_subscription`, mapped by the internal
+`notification.model.TelegramSubscription` entity and `TelegramSubscriptionRepository`.
+It stores one booking-to-private-chat link, consent time, optional revocation time
+and an optimistic-lock version. Chat IDs use `bigint`/Java `long`. A private chat can
+subscribe to several bookings, but a booking has one immutable recipient; another
+insert cannot silently replace that recipient. Revocation preserves the original
+consent and first revocation timestamp. Repository active lookups exclude revoked rows.
+
+This is persistence only. There is no subscription creation endpoint, bot-link
+token flow, Telegram webhook, patient delivery or SSE. Existing staff notifications
+continue to use `notification_job`. Patient notification behavior remains subject
+to the separate decision required by AP-14 in the shared API contract. A future
+approved linking service must verify booking ownership, consent and a private-chat
+Telegram update before saving a subscription; a numeric chat ID is not proof of
+ownership. Patient delivery must check active consent, including when retrying a job.
+
 ## Repository layout
 
 ```text
