@@ -1466,6 +1466,177 @@ paths:
         '428':
           description: VERSION_REQUIRED
 
+  /public/about:
+    get:
+      tags: [About Page]
+      operationId: getPublicAbout
+      summary: About page content in one language
+      description: >-
+        AB-01 to AB-14, approved November 20, 2026. No fallback language. Cache-Control no-store, Content-Language set.
+      parameters:
+        - name: lang
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/LanguageCode'
+      responses:
+        '200':
+          description: The page in the requested language
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicAboutWrapper'
+        '400':
+          description: lang is missing or not km, en or zh (VALIDATION_ERROR)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/about:
+    get:
+      tags: [About Page]
+      security:
+        - BearerAuth: []
+      operationId: getAdminAbout
+      summary: About page content in every language, with its ETag
+      description: AB revision, approved November 20, 2026. ADMIN only.
+      responses:
+        '200':
+          description: The page and its version
+          headers:
+            ETag:
+              schema:
+                type: string
+                example: '"3"'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAboutWrapper'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+    put:
+      tags: [About Page]
+      security:
+        - BearerAuth: []
+      operationId: updateAdminAbout
+      summary: Replace and publish the About page content
+      description: >-
+        AB-03 to AB-13, approved November 20, 2026. Facilities without an id are created; facilities
+        left out are deleted with their images.
+      parameters:
+        - $ref: '#/components/parameters/AboutIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminAboutWrite'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminAboutSaved'
+        '400':
+          $ref: '#/components/responses/AboutProblem'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          description: A founder is unknown, inactive or not public (DOCTOR_NOT_FOUND)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '409':
+          description: A language would be missing (TRANSLATION_MISSING)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
+  /admin/about/facilities/{id}/image:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    put:
+      tags: [About Page]
+      security:
+        - BearerAuth: []
+      operationId: putAboutFacilityImage
+      summary: Upload or replace a facility photo
+      description: AB-12 (SI-01 to SI-07 rules), approved November 20, 2026. Changes the page version.
+      parameters:
+        - $ref: '#/components/parameters/AboutIfMatch'
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image, altTexts]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                altTexts:
+                  type: array
+                  minItems: 3
+                  maxItems: 3
+                  items:
+                    type: object
+                    required: [languageCode, imageAltText]
+                    properties:
+                      languageCode:
+                        $ref: '#/components/schemas/LanguageCode'
+                      imageAltText:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+            encoding:
+              altTexts:
+                contentType: application/json
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminAboutSaved'
+        '404':
+          description: Unknown facility (NOT_FOUND)
+        '412':
+          description: VERSION_MISMATCH
+        '413':
+          description: IMAGE_TOO_LARGE
+        '415':
+          description: UNSUPPORTED_IMAGE
+        '428':
+          description: VERSION_REQUIRED
+    delete:
+      tags: [About Page]
+      security:
+        - BearerAuth: []
+      operationId: deleteAboutFacilityImage
+      summary: Remove a facility photo and its alt text
+      description: AB-12, approved November 20, 2026. Changes the page version.
+      parameters:
+        - $ref: '#/components/parameters/AboutIfMatch'
+      responses:
+        '200':
+          $ref: '#/components/responses/AdminAboutSaved'
+        '404':
+          description: Unknown facility (NOT_FOUND)
+        '412':
+          description: VERSION_MISMATCH
+        '428':
+          description: VERSION_REQUIRED
+
   /admin/dashboard/summary:
     get:
       tags:
@@ -2182,6 +2353,14 @@ components:
       schema:
         type: string
         example: '"1"'
+    AboutIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag of the About page from the latest GET or write response (AB-03).
+      schema:
+        type: string
+        example: '"3"'
 
   headers:
     ServiceETag:
@@ -2196,6 +2375,24 @@ components:
         example: '"1"'
 
   responses:
+    AdminAboutSaved:
+      description: The saved About page and its new strong ETag
+      headers:
+        ETag:
+          description: Strong version tag to send in If-Match.
+          schema:
+            type: string
+            example: '"4"'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AdminAboutWrapper'
+    AboutProblem:
+      description: A field is invalid or outside its limits (VALIDATION_ERROR)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
     AppointmentSaved:
       description: The appointment and its strong ETag
       headers:
@@ -3435,6 +3632,230 @@ components:
           type: integer
         totalPages:
           type: integer
+
+    AboutPillarType:
+      type: string
+      enum: [MISSION, VISION, VALUES]
+
+    AboutPageText:
+      type: object
+      required: [languageCode, heroTitle, heroSubtitle, storyTitle, storyBody]
+      properties:
+        languageCode:
+          $ref: '#/components/schemas/LanguageCode'
+        heroTitle: { type: string, minLength: 1, maxLength: 120 }
+        heroSubtitle: { type: string, minLength: 1, maxLength: 300 }
+        storyTitle: { type: string, minLength: 1, maxLength: 120 }
+        storyBody:
+          type: string
+          minLength: 1
+          maxLength: 4000
+          description: Plain text; a blank line separates paragraphs (at most 8)
+
+    AboutPillarWrite:
+      type: object
+      required: [type, translations]
+      properties:
+        type:
+          $ref: '#/components/schemas/AboutPillarType'
+        translations:
+          type: array
+          items:
+            type: object
+            required: [languageCode, title, text]
+            properties:
+              languageCode:
+                $ref: '#/components/schemas/LanguageCode'
+              title: { type: string, minLength: 1, maxLength: 80 }
+              text: { type: string, minLength: 1, maxLength: 500 }
+              note: { type: [string, 'null'], maxLength: 120 }
+
+    AboutFigureWrite:
+      type: object
+      required: [value, translations]
+      properties:
+        value: { type: string, minLength: 1, maxLength: 20, example: 20K+ }
+        translations:
+          type: array
+          items:
+            type: object
+            required: [languageCode, label]
+            properties:
+              languageCode:
+                $ref: '#/components/schemas/LanguageCode'
+              label: { type: string, minLength: 1, maxLength: 60 }
+
+    AboutFacilityText:
+      type: object
+      required: [languageCode, title, description]
+      properties:
+        languageCode:
+          $ref: '#/components/schemas/LanguageCode'
+        title: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, minLength: 1, maxLength: 500 }
+        badge: { type: [string, 'null'], maxLength: 40 }
+        imageAltText:
+          type: [string, 'null']
+          maxLength: 200
+          description: Required in every language while the facility has an image
+
+    AdminAboutWrite:
+      type: object
+      description: AB revision, approved November 20, 2026.
+      required: [translations, pillars, figures, founders, facilities]
+      properties:
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AboutPageText'
+        pillars:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/AboutPillarWrite'
+        figures:
+          type: array
+          maxItems: 6
+          items:
+            $ref: '#/components/schemas/AboutFigureWrite'
+        founders:
+          type: array
+          maxItems: 4
+          items:
+            type: object
+            required: [doctorId]
+            properties:
+              doctorId: { type: string, format: uuid }
+        facilities:
+          type: array
+          maxItems: 8
+          items:
+            type: object
+            required: [translations]
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: Absent for a new facility
+              translations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AboutFacilityText'
+
+    AdminAbout:
+      type: object
+      required: [version, translations, pillars, figures, founders, facilities, updatedAt]
+      properties:
+        version: { type: integer, format: int64 }
+        translations:
+          type: array
+          items:
+            $ref: '#/components/schemas/AboutPageText'
+        pillars:
+          type: array
+          items:
+            $ref: '#/components/schemas/AboutPillarWrite'
+        figures:
+          type: array
+          items:
+            $ref: '#/components/schemas/AboutFigureWrite'
+        founders:
+          type: array
+          items:
+            type: object
+            required: [doctorId, fullName, public]
+            properties:
+              doctorId: { type: string, format: uuid }
+              fullName: { type: string }
+              public:
+                type: boolean
+                description: False when the doctor is no longer public (AB-10)
+        facilities:
+          type: array
+          items:
+            type: object
+            required: [id, imageUrl, translations]
+            properties:
+              id: { type: string, format: uuid }
+              imageUrl: { type: [string, 'null'] }
+              translations:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AboutFacilityText'
+        updatedAt: { type: string, format: date-time }
+
+    AdminAboutWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminAbout'
+
+    PublicAbout:
+      type: object
+      description: AB revision, approved November 20, 2026. Every field present; optional values null.
+      required: [heroTitle, heroSubtitle, storyTitle, storyParagraphs, pillars, figures, founders, facilities]
+      properties:
+        heroTitle: { type: string }
+        heroSubtitle: { type: string }
+        storyTitle: { type: string }
+        storyParagraphs:
+          type: array
+          items: { type: string }
+        pillars:
+          type: array
+          items:
+            type: object
+            required: [type, title, text, note]
+            properties:
+              type:
+                $ref: '#/components/schemas/AboutPillarType'
+              title: { type: string }
+              text: { type: string }
+              note: { type: [string, 'null'] }
+        figures:
+          type: array
+          items:
+            type: object
+            required: [value, label]
+            properties:
+              value: { type: string }
+              label: { type: string }
+        founders:
+          type: array
+          description: Public doctor profile fields of each founder, in order (AB-09)
+          items:
+            type: object
+            required: [slug, fullName, title, bio, tags, imageUrl, imageAltText]
+            properties:
+              slug: { type: string }
+              fullName: { type: string }
+              title: { type: [string, 'null'] }
+              bio: { type: [string, 'null'] }
+              tags:
+                type: array
+                items: { type: string }
+              imageUrl: { type: [string, 'null'] }
+              imageAltText: { type: [string, 'null'] }
+        facilities:
+          type: array
+          items:
+            type: object
+            required: [title, description, badge, imageUrl, imageAltText]
+            properties:
+              title: { type: string }
+              description: { type: string }
+              badge: { type: [string, 'null'] }
+              imageUrl: { type: [string, 'null'] }
+              imageAltText: { type: [string, 'null'] }
+
+    PublicAboutWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/PublicAbout'
 
     DashboardStatsWrapper:
       type: object

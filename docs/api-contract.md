@@ -2087,3 +2087,213 @@ No new codes. Problem-details body as for the banner.
    reception's workload. Requests made in one period and confirmed in the next count in the next.
 2. The chart has no `rejected` count. Buckets carry `requested`, `confirmed` and `completed` only.
 3. `WEEK` is the rolling last 7 clinic days including today (DS-01), not the calendar week.
+
+
+## About page content - revision, November 20, 2026
+
+> **Status:** Approved by the Team Lead on November 20, 2026 (AB-01 to AB-14).
+> Makes the content of the public About page editable by the Clinic
+> Admin. Builds on the multilingual banner rules (I18N-01 to I18N-05), service images (SI) and
+> public doctor profiles (PC, Doctor profile details). Roles, appointment and visit transitions,
+> and receptionist approval are unchanged. No doctor login is introduced.
+
+### Why
+
+The About page is hardcoded in the website: the introduction, the clinic story, mission,
+vision and values, the key figures, the two founders and the facilities, in three languages.
+Any change needs a developer and a deploy. The founders' names, roles, biographies and photos
+also exist as doctor profiles, so the same facts are kept in two places and can disagree.
+This revision stores the page content in the backend and lets the admin edit it in one form.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| AB-01 | Scope | The content of the About page: introduction, story, three pillars (mission, vision, values), key figures, founders and facilities. The Contact page, the homepage and the medical-expertise section (which follows the service catalogue) are out of scope. |
+| AB-02 | Labels stay in code | Section labels, button text and breadcrumbs ("Our story", "Book appointment") stay in the website's translation files. Only content is stored. |
+| AB-03 | One page, one version | The page is one resource with one `version`, like the banner. `GET` returns a strong `ETag`; `PUT` requires `If-Match` (`428 VERSION_REQUIRED`, `412 VERSION_MISMATCH`). |
+| AB-04 | Languages | Every translated field exists in `km`, `en` and `zh`. A save that would leave any language missing returns `409 TRANSLATION_MISSING` and changes nothing (I18N rules). The public route takes a required `lang` and returns that language only, with no fallback. |
+| AB-05 | Saving publishes | Saving publishes immediately; there is no draft, as for the banner. |
+| AB-06 | Story | `storyBody` is plain text; a blank line separates paragraphs. No HTML or Markdown. The website renders each paragraph as text. |
+| AB-07 | Pillars | Exactly three, in this order: `MISSION`, `VISION`, `VALUES`. Each has a `title`, a `text` and an optional short `note`. |
+| AB-08 | Key figures | 0 to 6 items, in the order given. `value` is not translated (`"20K+"`, `"ISO 15189"`); `label` is. |
+| AB-09 | Founders | 0 to 4 doctors, in the order given, chosen by doctor `id`. The public route returns each founder's public profile fields (PC, Doctor profile details) in the requested language: `slug`, `fullName`, `title` as the role, `bio`, `tags` as the credentials, `imageUrl` and `imageAltText`. Nothing about a founder is stored on the About page. |
+| AB-10 | Founder visibility | A founder must be an active doctor with a public profile when saved, or the save returns `404 DOCTOR_NOT_FOUND` with the index in `errors[].field` (`founders[1]`). A founder who later stops being public is left out of the public response; the admin response still lists them with `public: false`. |
+| AB-11 | Facilities | 0 to 8 items, in the order given. Each has a translated `title`, `description` and optional `badge`. An existing facility keeps its `id` in the `PUT`; an item without `id` is new; a facility left out of the `PUT` is deleted with its image. |
+| AB-12 | Facility images | Uploaded and removed per facility with `PUT` and `DELETE /admin/about/facilities/{id}/image`, following SI-01 to SI-07: JPEG, PNG or WebP up to 5 MiB, stored in R2 through `cms_media`, alt text required in every language while there is an image. A facility without an image is shown without a photo. |
+| AB-13 | Initial content | The migration seeds the current website text in all three languages, so the page looks the same on release except for facility photos and founders, which the admin adds after release. |
+| AB-14 | Access and caching | Admin routes: ADMIN only, like the banner. Public route: no authentication, `Cache-Control: no-store` and `Content-Language`, like the public banner. |
+
+### Field limits
+
+| Field | Rule |
+| --- | --- |
+| `heroTitle` | 1–120 characters |
+| `heroSubtitle` | 1–300 |
+| `storyTitle` | 1–120 |
+| `storyBody` | 1–4000; at most 8 paragraphs |
+| Pillar `title` / `text` / `note` | 1–80 / 1–500 / 0–120 (`null` when empty) |
+| Figure `value` / `label` | 1–20 / 1–60 |
+| Facility `title` / `description` / `badge` | 1–120 / 1–500 / 0–40 (`null` when empty) |
+| Facility `imageAltText` | 1–200, required in every language while the facility has an image |
+
+Text is trimmed; a value that is empty after trimming counts as missing.
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| GET | /api/v1/public/about?lang=km | Public |
+| GET | /api/v1/admin/about | ADMIN |
+| PUT | /api/v1/admin/about | ADMIN, `If-Match` required |
+| PUT | /api/v1/admin/about/facilities/{id}/image | ADMIN, `If-Match` required |
+| DELETE | /api/v1/admin/about/facilities/{id}/image | ADMIN, `If-Match` required |
+
+The image upload takes `image` and an `altTexts` JSON part with exactly three
+`{ "languageCode", "imageAltText" }` entries, one per language, as for service and doctor photos.
+
+The image routes take the page `ETag`, change the page `version` and return the admin body with
+the new `ETag`, so two admins cannot overwrite each other's changes.
+
+### `GET /api/v1/admin/about`
+
+HTTP `200` with `ETag: "<version>"` and `Cache-Control: no-store`:
+
+```json
+{
+  "data": {
+    "version": 3,
+    "translations": [
+      {
+        "languageCode": "en",
+        "heroTitle": "Providing you with the best doctors for the best care",
+        "heroSubtitle": "Sokhasa Health brings specialist medicine and longevity care together in Phnom Penh.",
+        "storyTitle": "Our story",
+        "storyBody": "Sokhasa Health Co., Ltd. was founded by ...\n\nUnder the Sokhasa Health network ..."
+      }
+    ],
+    "pillars": [
+      {
+        "type": "MISSION",
+        "translations": [
+          { "languageCode": "en", "title": "Our mission", "text": "…", "note": "Modern therapeutics and cellular protocols" }
+        ]
+      }
+    ],
+    "figures": [
+      { "value": "20K+", "translations": [ { "languageCode": "en", "label": "Patients cared for" } ] }
+    ],
+    "founders": [
+      { "doctorId": "9a7e…", "fullName": "Dr. PHENG Bora", "public": true }
+    ],
+    "facilities": [
+      {
+        "id": "4c2b…",
+        "imageUrl": "https://<r2-signed-url>",
+        "translations": [
+          {
+            "languageCode": "en",
+            "title": "ISO 15189 certified laboratory",
+            "description": "…",
+            "badge": "Accredited",
+            "imageAltText": "Laboratory analysers at Sokhasa"
+          }
+        ]
+      }
+    ],
+    "updatedAt": "2026-11-20T10:00:00+07:00"
+  }
+}
+```
+
+The example shows one language; every `translations` array holds `km`, `en` and `zh`.
+
+### `PUT /api/v1/admin/about`
+
+Same body as the admin response without `version`, `updatedAt`, `founders[].fullName`,
+`founders[].public` and `facilities[].imageUrl`. `founders` is a list of `{ "doctorId" }`.
+`imageAltText` may be sent only for a facility that has an image. HTTP `200` with the admin body
+and the new `ETag`.
+
+### `GET /api/v1/public/about?lang=km`
+
+```json
+{
+  "data": {
+    "heroTitle": "…",
+    "heroSubtitle": "…",
+    "storyTitle": "…",
+    "storyParagraphs": ["…", "…"],
+    "pillars": [ { "type": "MISSION", "title": "…", "text": "…", "note": "…" } ],
+    "figures": [ { "value": "20K+", "label": "…" } ],
+    "founders": [
+      {
+        "slug": "dr-pheng-bora",
+        "fullName": "Dr. PHENG Bora",
+        "title": "…",
+        "bio": "…",
+        "tags": ["…"],
+        "imageUrl": "https://<r2-signed-url>",
+        "imageAltText": "…"
+      }
+    ],
+    "facilities": [ { "title": "…", "description": "…", "badge": null, "imageUrl": null, "imageAltText": null } ]
+  }
+}
+```
+
+Every field is present; optional values are `null`, lists are `[]`. `storyParagraphs` is
+`storyBody` split on blank lines. `Content-Language` is the requested language.
+
+### Errors
+
+No new codes. Problem-details body as for the banner.
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | `lang` missing or invalid; a field outside its limits; pillars not exactly `MISSION`, `VISION`, `VALUES`; more than 6 figures, 4 founders or 8 facilities; a duplicate founder; `imageAltText` for a facility without an image |
+| 404 | `DOCTOR_NOT_FOUND` | A founder is unknown, inactive or not public (AB-10) |
+| 404 | `NOT_FOUND` | Image route for an unknown facility `id` |
+| 409 | `TRANSLATION_MISSING` | A language would be missing after the save |
+| 412 | `VERSION_MISMATCH` | `If-Match` is not the current version |
+| 413 | `IMAGE_TOO_LARGE` | Image larger than 5 MiB |
+| 415 | `UNSUPPORTED_IMAGE` | Image is not JPEG, PNG or WebP |
+| 428 | `VERSION_REQUIRED` | `If-Match` is missing |
+
+### Migration
+
+- `clinic.about_page` (one row: `version`, `updated_at`) and `about_page_translation`
+  (`language_code`, hero, story).
+- `about_pillar_translation` (`type`, `language_code`, `title`, `text`, `note`).
+- `about_figure` (`id`, `sort_order`, `value`) and `about_figure_translation`.
+- `about_founder` (`doctor_id` primary key, `sort_order`), `doctor_id` referencing
+  `clinic.doctor` with `ON DELETE RESTRICT`.
+- `about_facility` (`id`, `sort_order`, `image_media_id` referencing `cms_media`) and
+  `about_facility_translation`.
+- Seed: the current website text for the introduction, story, pillars, figures and facilities in
+  `km`, `en` and `zh` (AB-13).
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Public `GET` after migration | `200`; the same text as today's website in the requested language |
+| `GET /public/about` without `lang`, or `lang=fr` | `400 VALIDATION_ERROR`, field `lang` |
+| Admin saves new story text in all three languages | `200`; public route shows it at once |
+| Save with the Chinese story missing | `409 TRANSLATION_MISSING`; nothing changes |
+| Save with a stale `ETag` | `412 VERSION_MISMATCH` |
+| Story with two blank-line-separated paragraphs | `storyParagraphs` has two items |
+| Pick two public doctors as founders | Public route returns their profile fields in that order |
+| Pick a doctor without a public profile | `404 DOCTOR_NOT_FOUND`, field `founders[0]` |
+| A founder's profile is later hidden | Left out of the public route; admin shows `public: false` |
+| Facility left out of a save | Deleted, and its image removed from R2 |
+| Upload a 6 MiB facility image | `413 IMAGE_TOO_LARGE` |
+| Upload an image, then save without alt text in `zh` | `400 VALIDATION_ERROR` on `facilities[0].translations` |
+| RECEPTION calls an admin route | `403` |
+
+### Release decisions — approved November 20, 2026
+
+1. The admin selects founders after release. Until then, the founder section is hidden.
+2. The admin uploads facility photos after release. Until then, facilities have no photos.
+3. Founder cards omit the separate Khmer-script name. Names come from doctor profiles.
+4. Seed today's text unchanged, including Sen Sok. The admin can correct it in the editor.
