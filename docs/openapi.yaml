@@ -602,6 +602,49 @@ paths:
           description: Missing or invalid bearer token
         '403':
           description: Caller lacks the ADMIN role
+    post:
+      tags:
+        - Admin Services
+      security:
+        - BearerAuth: []
+      operationId: createAdminService
+      summary: Create a service (proposed, SC-03 to SC-06)
+      description: |
+        Proposed November 27, 2026 (Service catalogue management, SC). Not approved.
+        Creates an INACTIVE service. The slug cannot be changed later. Activate it with
+        PATCH /admin/services/{id}/activate once every language has its text and description.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminServiceCreate'
+      responses:
+        '201':
+          description: The new, inactive service
+          headers:
+            Location:
+              schema:
+                type: string
+              description: /api/v1/admin/services/{id}
+            ETag:
+              $ref: '#/components/headers/ServiceETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceWrapper'
+        '400':
+          $ref: '#/components/responses/ServiceValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '409':
+          description: Another service has the slug (SERVICE_SLUG_TAKEN)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
 
   /admin/services/{id}:
     parameters:
@@ -717,6 +760,164 @@ paths:
           description: Caller lacks the ADMIN role
         '404':
           $ref: '#/components/responses/ServiceNotFound'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+
+  /admin/service-categories:
+    get:
+      tags:
+        - Admin Service Categories
+      security:
+        - BearerAuth: []
+      operationId: listAdminServiceCategories
+      summary: List service categories (proposed, SC-11)
+      description: Proposed November 27, 2026 (SC). Not approved. Ordered by sortOrder, English name, id.
+      responses:
+        '200':
+          description: All categories
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceCategoryListWrapper'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+    post:
+      tags:
+        - Admin Service Categories
+      security:
+        - BearerAuth: []
+      operationId: createAdminServiceCategory
+      summary: Create a service category (proposed, SC-07)
+      description: Proposed November 27, 2026 (SC). Not approved. A name is required in km, en and zh.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminServiceCategoryCreate'
+      responses:
+        '201':
+          description: The new category
+          headers:
+            Location:
+              schema:
+                type: string
+              description: /api/v1/admin/service-categories/{id}
+            ETag:
+              $ref: '#/components/headers/ServiceCategoryETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceCategoryWrapper'
+        '400':
+          $ref: '#/components/responses/ServiceCategoryValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '409':
+          description: Another category has the slug (CATEGORY_SLUG_TAKEN), or a name is missing in a language (TRANSLATION_MISSING)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
+
+  /admin/service-categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ServiceCategoryId'
+    get:
+      tags:
+        - Admin Service Categories
+      security:
+        - BearerAuth: []
+      operationId: getAdminServiceCategory
+      summary: Get one service category (proposed)
+      description: Proposed November 27, 2026 (SC). Not approved.
+      responses:
+        '200':
+          description: The category and its strong ETag
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceCategoryETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceCategoryWrapper'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/ServiceCategoryNotFound'
+    put:
+      tags:
+        - Admin Service Categories
+      security:
+        - BearerAuth: []
+      operationId: updateAdminServiceCategory
+      summary: Rename or reorder a service category (proposed, SC-07, SC-08)
+      description: |
+        Proposed November 27, 2026 (SC). Not approved. Languages not sent keep their saved name.
+        The slug cannot be changed.
+      parameters:
+        - $ref: '#/components/parameters/ServiceCategoryIfMatch'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminServiceCategoryUpdate'
+      responses:
+        '200':
+          description: The saved category and its new ETag
+          headers:
+            ETag:
+              $ref: '#/components/headers/ServiceCategoryETag'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceCategoryWrapper'
+        '400':
+          $ref: '#/components/responses/ServiceCategoryValidationError'
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/ServiceCategoryNotFound'
+        '412':
+          description: If-Match is not the current version (VERSION_MISMATCH)
+        '428':
+          description: If-Match header is missing (VERSION_REQUIRED)
+    delete:
+      tags:
+        - Admin Service Categories
+      security:
+        - BearerAuth: []
+      operationId: deleteAdminServiceCategory
+      summary: Delete an empty service category (proposed, SC-09)
+      description: Proposed November 27, 2026 (SC). Not approved. Only a category with no services can be deleted.
+      parameters:
+        - $ref: '#/components/parameters/ServiceCategoryIfMatch'
+      responses:
+        '204':
+          description: Deleted
+        '401':
+          description: Missing or invalid bearer token
+        '403':
+          description: Caller lacks the ADMIN role
+        '404':
+          $ref: '#/components/responses/ServiceCategoryNotFound'
+        '409':
+          description: The category still has services (CATEGORY_NOT_EMPTY)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetails'
         '412':
           description: If-Match is not the current version (VERSION_MISMATCH)
         '428':
@@ -2338,6 +2539,21 @@ components:
       schema:
         type: string
         example: '"3"'
+    ServiceCategoryId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ServiceCategoryIfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag from the latest category GET or write response (proposed, SC-08).
+      schema:
+        type: string
+        example: '"0"'
     PackageId:
       name: id
       in: path
@@ -2368,6 +2584,11 @@ components:
       schema:
         type: string
         example: '"3"'
+    ServiceCategoryETag:
+      description: Strong category version tag to send in If-Match (proposed, SC-08).
+      schema:
+        type: string
+        example: '"0"'
     PackageETag:
       description: Strong version tag to send in If-Match.
       schema:
@@ -2437,6 +2658,18 @@ components:
             $ref: '#/components/schemas/ProblemDetails'
     ServiceValidationError:
       description: Invalid field, duplicate or unknown languageCode, malformed JSON, or imageAltText sent (VALIDATION_ERROR)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    ServiceCategoryNotFound:
+      description: Unknown or malformed category id (CATEGORY_NOT_FOUND, proposed)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/ProblemDetails'
+    ServiceCategoryValidationError:
+      description: Invalid slug, sortOrder or name, duplicate or unknown languageCode, slug sent in a PUT, or malformed JSON (VALIDATION_ERROR, proposed)
       content:
         application/problem+json:
           schema:
@@ -3317,6 +3550,10 @@ components:
       type: object
       required: [durationMinutes, bufferMinutes, priceUsd, originalPriceUsd, sortOrder]
       properties:
+        categoryId:
+          type: string
+          format: uuid
+          description: Proposed (SC-05). Moves the service to another existing category. Absent keeps the current one.
         durationMinutes:
           type: integer
           minimum: 5
@@ -3343,6 +3580,145 @@ components:
           description: Each languageCode at most once. Languages not sent keep their saved text.
           items:
             $ref: '#/components/schemas/AdminServiceText'
+
+    AdminServiceCreate:
+      description: Proposed November 27, 2026 (SC-04, SC-06). Not approved.
+      type: object
+      required: [slug, categoryId, durationMinutes, bufferMinutes, priceUsd, originalPriceUsd, sortOrder]
+      properties:
+        slug:
+          type: string
+          minLength: 3
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+          description: Unique among services; cannot be changed later.
+        categoryId:
+          type: string
+          format: uuid
+        durationMinutes:
+          type: integer
+          minimum: 5
+          maximum: 480
+        bufferMinutes:
+          type: integer
+          minimum: 0
+          maximum: 60
+        priceUsd:
+          type: [number, 'null']
+          minimum: 0
+          multipleOf: 0.01
+        originalPriceUsd:
+          type: [number, 'null']
+          multipleOf: 0.01
+          description: Null, or greater than priceUsd. Requires priceUsd.
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        translations:
+          type: array
+          maxItems: 3
+          description: 0 to 3 languages, each at most once. imageAltText must be absent or null.
+          items:
+            $ref: '#/components/schemas/AdminServiceText'
+
+    AdminServiceCategoryName:
+      type: object
+      required: [languageCode, name]
+      properties:
+        languageCode:
+          $ref: '#/components/schemas/LanguageCode'
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+
+    AdminServiceCategory:
+      description: Proposed November 27, 2026 (SC-07 to SC-10). Not approved.
+      type: object
+      required: [id, slug, sortOrder, version, serviceCount, activeServiceCount, updatedAt, translations]
+      properties:
+        id:
+          type: string
+          format: uuid
+        slug:
+          type: string
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        version:
+          type: integer
+          description: Same value as the ETag, without quotes.
+        serviceCount:
+          type: integer
+          minimum: 0
+          description: Services in the category, active and inactive (SC-09).
+        activeServiceCount:
+          type: integer
+          minimum: 0
+          description: Active services; 0 means the category is not shown on the website (SC-10).
+        updatedAt:
+          type: string
+          format: date-time
+        translations:
+          type: array
+          description: Ordered km, en, zh.
+          items:
+            $ref: '#/components/schemas/AdminServiceCategoryName'
+
+    AdminServiceCategoryWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/AdminServiceCategory'
+
+    AdminServiceCategoryListWrapper:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminServiceCategory'
+
+    AdminServiceCategoryCreate:
+      description: Proposed (SC-07). A name in km, en and zh is required.
+      type: object
+      required: [slug, sortOrder, translations]
+      properties:
+        slug:
+          type: string
+          minLength: 3
+          maxLength: 100
+          pattern: '^[a-z0-9]+(-[a-z0-9]+)*$'
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        translations:
+          type: array
+          minItems: 3
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/AdminServiceCategoryName'
+
+    AdminServiceCategoryUpdate:
+      description: Proposed (SC-07). Languages not sent keep their saved name; slug cannot be sent.
+      type: object
+      additionalProperties: false
+      required: [sortOrder]
+      properties:
+        sortOrder:
+          type: integer
+          minimum: 0
+          maximum: 9999
+        translations:
+          type: array
+          maxItems: 3
+          items:
+            $ref: '#/components/schemas/AdminServiceCategoryName'
 
     ProblemDetails:
       type: object
