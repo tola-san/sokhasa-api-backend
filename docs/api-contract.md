@@ -2297,3 +2297,197 @@ No new codes. Problem-details body as for the banner.
 2. The admin uploads facility photos after release. Until then, facilities have no photos.
 3. Founder cards omit the separate Khmer-script name. Names come from doctor profiles.
 4. Seed today's text unchanged, including Sen Sok. The admin can correct it in the editor.
+
+## Service catalogue management - revision, November 27, 2026
+
+> **Status:** Proposed for Team Lead review (SC-01 to SC-14). Not approved; do not implement
+> until it is. Adds the phase 2 items that [admin service editing](#admin-service-editing-phase-1--approved-november-18-2026)
+> left **After MVP**: creating services and managing categories. Builds on SA-01 to SA-10,
+> SI-01 to SI-07 and PC-01 to PC-08. Roles, appointment and visit transitions, and receptionist
+> approval are unchanged. No doctor login is introduced. Deleting a service stays out of scope.
+
+### Why
+
+The clinic's real service list (15 services in 6 categories, from its service poster) does not
+match the six seeded services. Today a service or category can only be added by a developer
+writing a Flyway migration, so the admin cannot keep the catalogue up to date. The website also
+keeps its own copy of the service list, which drifts from the database.
+
+### Decisions
+
+| ID | Decision | Rule |
+| --- | --- | --- |
+| SC-01 | Scope | The admin can create services, create, rename and reorder categories, move a service to another category, and delete an empty category. Services are never deleted; they are deactivated (SA-08), because appointments reference them (`ON DELETE RESTRICT`). |
+| SC-02 | Access | `ADMIN` only, as SA-01 and SA-09. `RECEPTION` gets `403`. |
+| SC-03 | New services start hidden | `POST /admin/services` creates an `INACTIVE` service. It becomes public through the existing activate route, which still requires every language with `description` (SA-06, PC-03). This lets the admin add text, an image and doctors before patients see it. |
+| SC-04 | Service slug | Required on create: lowercase letters, digits and single hyphens (`^[a-z0-9]+(-[a-z0-9]+)*$`), 3–100 characters, unique among services. **It cannot be changed afterwards** (SA-03 stays), because links, images and bookmarks use it. A taken slug returns `409 SERVICE_SLUG_TAKEN`. |
+| SC-05 | Category of a service | **Changes SA-03 for category only.** `PUT /admin/services/{id}` accepts an optional `categoryId`; absent keeps the current category. An unknown id returns `400 VALIDATION_ERROR` on `categoryId`. Moving a service does not change its appointments or doctor links. |
+| SC-06 | Create body | Same fields and limits as `PUT /admin/services/{id}` (SA-02, PC-03) plus `slug` and `categoryId`. `translations` may hold 0–3 languages, because the service starts inactive. |
+| SC-07 | Categories | A category has a `slug` (same pattern as SC-04, 3–100 characters, unique, set on create and never changed), a `sortOrder` (0–9999) and a `name` (1–120 characters) in **all three languages**. A save that would leave a language without a name returns `409 TRANSLATION_MISSING`. |
+| SC-08 | Category versions | Each category gets a `version` and a strong `ETag`. `PUT` and `DELETE` require `If-Match` (`428 VERSION_REQUIRED`, `412 VERSION_MISMATCH`), as for services. |
+| SC-09 | Deleting a category | Allowed only when no service, active or inactive, belongs to it. Otherwise `409 CATEGORY_NOT_EMPTY`; move the services first. |
+| SC-10 | Category visibility | Categories have no status. A category with no `ACTIVE` service is not shown on the website, because the public list (SV-05) is built from services. |
+| SC-11 | Order | Admin category list: `sortOrder`, then English `name`, then `id`. Services keep the SV-05 order. |
+| SC-12 | Concurrent creates | Two requests with the same slug: one `201`, the other `409 SERVICE_SLUG_TAKEN` (or `409 CATEGORY_SLUG_TAKEN`), enforced by the existing unique constraints. |
+| SC-13 | Detail-page content | Out of scope. Overview, benefits, procedure and FAQs stay bundled website content by `slug` (PC-02). A service created here has no bundled content, so the website shows its detail page from the API fields alone: name, short description, `description`, `preparation`, image and linked doctors. |
+| SC-14 | Website | The website shows every active service the API returns, with or without bundled content. **This changes the current website behaviour**, which drops API services it does not know by `slug`. Bundled content, where it exists, is added on top. |
+
+### Routes
+
+| Method | Route | Access |
+| --- | --- | --- |
+| POST | /api/v1/admin/services | ADMIN (new) |
+| PUT | /api/v1/admin/services/{id} | ADMIN, `If-Match` required (changed: optional `categoryId`) |
+| GET | /api/v1/admin/service-categories | ADMIN (new) |
+| GET | /api/v1/admin/service-categories/{id} | ADMIN (new) |
+| POST | /api/v1/admin/service-categories | ADMIN (new) |
+| PUT | /api/v1/admin/service-categories/{id} | ADMIN, `If-Match` required (new) |
+| DELETE | /api/v1/admin/service-categories/{id} | ADMIN, `If-Match` required (new) |
+
+All responses use `Cache-Control: no-store`. An unknown or malformed category `{id}` returns
+`404 CATEGORY_NOT_FOUND`.
+
+### `POST /api/v1/admin/services`
+
+`application/json`. No `If-Match`.
+
+```json
+{
+  "slug": "internal-medicine",
+  "categoryId": "5b0e8f0e-7c1d-4b1e-9a43-1d2f0f6d1a01",
+  "durationMinutes": 30,
+  "bufferMinutes": 10,
+  "priceUsd": null,
+  "originalPriceUsd": null,
+  "sortOrder": 1,
+  "translations": [
+    {
+      "languageCode": "en",
+      "name": "Internal Medicine",
+      "shortDescription": "Diagnosis and ongoing care for adult illnesses.",
+      "description": "Consultations with an internal medicine doctor who examines the whole body.",
+      "preparation": null
+    }
+  ]
+}
+```
+
+| Field | Rule |
+| --- | --- |
+| `slug` | SC-04 |
+| `categoryId` | Required; an existing category, otherwise `400 VALIDATION_ERROR` on `categoryId` |
+| Other fields | As `PUT /admin/services/{id}` (SA-02, PC-03). `imageAltText` must be absent or `null`; images are added afterwards with `PUT /admin/services/{id}/image` (SI). |
+
+Returns HTTP `201` with `Location: /api/v1/admin/services/{id}`, `ETag: "0"` and the admin
+service body with `"status": "INACTIVE"` and `missingLanguages` listing the languages not sent.
+
+### Admin category body
+
+`GET /api/v1/admin/service-categories/{id}` returns HTTP `200` with `ETag: "<version>"` and:
+
+```json
+{
+  "data": {
+    "id": "5b0e8f0e-7c1d-4b1e-9a43-1d2f0f6d1a01",
+    "slug": "general-internal-medicine",
+    "sortOrder": 1,
+    "version": 0,
+    "serviceCount": 3,
+    "activeServiceCount": 2,
+    "updatedAt": "2026-11-27T08:00:00Z",
+    "translations": [
+      { "languageCode": "km", "name": "វេជ្ជសាស្ត្រទូទៅ និងជំងឺរ៉ាំរ៉ៃ" },
+      { "languageCode": "en", "name": "General & Internal Medicine" },
+      { "languageCode": "zh", "name": "全科与综合内科门诊" }
+    ]
+  }
+}
+```
+
+`serviceCount` and `activeServiceCount` let the dashboard explain why a category cannot be
+deleted (SC-09) or is not shown on the website (SC-10). `translations` is ordered `km`, `en`, `zh`.
+
+`GET /api/v1/admin/service-categories` returns `{ "data": [ <admin category body>, … ] }` in
+SC-11 order. No paging.
+
+### `POST /api/v1/admin/service-categories`
+
+```json
+{
+  "slug": "laboratory-genetic-testing",
+  "sortOrder": 5,
+  "translations": [
+    { "languageCode": "km", "name": "មន្ទីរពិសោធន៍ និងតេស្តហ្សែន" },
+    { "languageCode": "en", "name": "Laboratory & Genetic Testing" },
+    { "languageCode": "zh", "name": "医学检验与基因检测" }
+  ]
+}
+```
+
+All three languages are required (SC-07). Returns HTTP `201` with
+`Location: /api/v1/admin/service-categories/{id}`, `ETag: "0"` and the admin category body.
+
+### `PUT /api/v1/admin/service-categories/{id}`
+
+`If-Match` required. Body `{ "sortOrder": 2, "translations": [ … ] }`. `sortOrder` is required;
+`translations` is optional, and languages not sent keep their saved name. Sending `slug` returns
+`400 VALIDATION_ERROR`. Returns HTTP `200` with the admin category body and the new `ETag`.
+
+### `DELETE /api/v1/admin/service-categories/{id}`
+
+`If-Match` required, no body. Returns HTTP `204` when the category has no services, otherwise
+`409 CATEGORY_NOT_EMPTY` with `serviceCount` in the problem body.
+
+### Errors
+
+| Status | Type | When |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | Bad slug pattern or length, field out of range, duplicate or unknown `languageCode`, unknown `categoryId`, `slug` sent in a category `PUT` or service `PUT`, `imageAltText` sent on create, malformed JSON |
+| 401 | — | Missing or invalid bearer token |
+| 403 | — | Caller lacks the `ADMIN` role |
+| 404 | `CATEGORY_NOT_FOUND` | Unknown or malformed category `{id}` |
+| 404 | `SERVICE_NOT_FOUND` | Unknown or malformed service `{id}` (as SA) |
+| 409 | `SERVICE_SLUG_TAKEN` | Another service has the slug |
+| 409 | `CATEGORY_SLUG_TAKEN` | Another category has the slug |
+| 409 | `CATEGORY_NOT_EMPTY` | Deleting a category that still has services |
+| 409 | `TRANSLATION_MISSING` | A category save that would leave a language without a name |
+| 412 / 428 | `VERSION_MISMATCH` / `VERSION_REQUIRED` | As for other admin edits |
+
+Errors use the CMS problem-details body.
+
+### Migration
+
+- Flyway adds `version bigint not null default 0` to `service_category`.
+- No data changes. The six seeded services and categories stay; the admin adds the clinic's real
+  services with the new routes and deactivates the seeded ones that do not apply.
+
+### Acceptance cases
+
+| Scenario | Expected result |
+| --- | --- |
+| Admin creates `internal-medicine` with English text only | `201`; `INACTIVE`; `missingLanguages: ["km", "zh"]`; not in `GET /public/services` |
+| Activate it before adding `km` and `zh` | `409 TRANSLATION_MISSING`; still `INACTIVE` |
+| Add every language with `description`, then activate | `200`; appears in `GET /public/services` and the booking form |
+| Create a second service with slug `internal-medicine` | `409 SERVICE_SLUG_TAKEN` |
+| Create with slug `Internal_Medicine` | `400 VALIDATION_ERROR` on `slug` |
+| Create with an unknown `categoryId` | `400 VALIDATION_ERROR` on `categoryId` |
+| `PUT` a service with a new `categoryId` | `200`; the public list shows it under the new category; appointments unchanged |
+| `PUT` a service with `slug` in the body | `400 VALIDATION_ERROR` on `slug` |
+| Create a category with only `en` | `409 TRANSLATION_MISSING`; nothing saved |
+| Rename a category's `zh` name only | `200`; `km` and `en` unchanged; new `ETag` |
+| Delete a category with one inactive service | `409 CATEGORY_NOT_EMPTY`; nothing deleted |
+| Delete an empty category | `204`; gone from the admin list |
+| Two admins rename the same category from one `ETag` | First `200`; second `412 VERSION_MISMATCH` |
+| Category whose services are all inactive | Not shown on the website; in the admin list with `activeServiceCount: 0` |
+| `RECEPTION` calls any route | `403` |
+| New active service with no bundled website content | The website lists it and shows its detail page from the API fields (SC-13, SC-14) |
+
+### Open questions for the Team Lead
+
+1. Should the admin be able to permanently delete a service that has never been booked? This
+   revision says no: deactivate only.
+2. Should the poster's packages (Anti-aging, Annual Health Check-up, Cancer Screening, Genetic
+   Testing) be created as services now, or wait for the
+   [packages revision](#packages-and-package-booking---revision-november-19-2026)? This revision does not decide.
+3. Should detail-page content (overview, benefits, procedure, FAQs) move to the API in a later
+   revision, so the website no longer bundles any service text? This revision keeps it out of scope (SC-13).
